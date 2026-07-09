@@ -24,6 +24,8 @@ export const STRINGS = {
     'upload.serversHint': 'comma-separated Blossom servers. Uploads are signed with a throwaway key, so a server cannot link your files to each other. Local dev is <code>http://localhost:3000</code>.',
     'upload.embedServers': 'put server list in the link',
     'upload.embedServersHint': 'off (default): shorter link, but it only opens on apps using the same default servers. on: longer, self-contained link that opens anywhere.',
+    'upload.embedMeta': 'put filename &amp; type in the link',
+    'upload.embedMetaHint': 'on (default): the recipient sees the original filename. off: shorter link, the recipient just gets a generic name. Either way no server ever sees it.',
     'upload.submit': 'encrypt &amp; upload',
 
     'result.linkNote': 'Share this link. The key lives after the <code>#</code> and is never sent to any server.',
@@ -110,6 +112,8 @@ export const STRINGS = {
     'upload.serversHint': '쉼표로 구분한 Blossom 서버 주소. 업로드는 일회용 키로 서명하므로 서버가 당신의 파일들을 서로 연결할 수 없습니다. 로컬 개발용은 <code>http://localhost:3000</code>.',
     'upload.embedServers': '링크에 서버 목록 포함',
     'upload.embedServersHint': '끄면(기본): 링크가 짧아지지만 같은 기본 서버를 쓰는 앱에서만 열립니다. 켜면: 길지만 어디서나 열리는 자체완결 링크.',
+    'upload.embedMeta': '링크에 파일명·형식 포함',
+    'upload.embedMetaHint': '켜면(기본): 받는 사람이 원본 파일명을 봅니다. 끄면: 링크가 짧아지고 받는 사람은 일반 이름만 받습니다. 어느 쪽이든 서버는 못 봅니다.',
     'upload.submit': '암호화 후 업로드',
 
     'result.linkNote': '이 링크를 공유하세요. 키는 <code>#</code> 뒤에 있으며 어떤 서버로도 전송되지 않습니다.',

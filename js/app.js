@@ -71,8 +71,13 @@ $('upload-form').addEventListener('submit', async (e) => {
     // only opens on apps that share those defaults. On = self-contained link
     // carrying its own mirrors, longer but portable to any instance.
     const embed = $('embed-servers').checked;
+    // Filename/mime (meta) is optional too: omit it for a shorter link and the
+    // recipient just sees a generic name. It is already encrypted either way —
+    // no server ever sees it; this only controls what the link itself carries.
+    const embedMeta = $('embed-meta').checked;
     const descriptor = buildDescriptor({
-      hash: blobHash, ck, servers: embed ? accepted : [], realSize, meta,
+      hash: blobHash, ck, servers: embed ? accepted : [], realSize,
+      meta: embedMeta ? meta : new Uint8Array(0),
     });
     $('link').value = buildLink(location.origin, descriptor);
     prog.textContent = t('status.stored', { count: accepted.length, size: humanSize(blob.length) });
@@ -108,7 +113,8 @@ async function renderDownload(frag) {
   show('dl-progress', false);
   try {
     const d = decodeFragment(frag);
-    const meta = await readMeta(d.ck, d.meta);
+    // A link may omit meta (shorter mode); fall back to a generic name/type.
+    const meta = d.meta.length ? await readMeta(d.ck, d.meta) : { name: null, mime: null };
     current = { d, meta };
     renderDownloadMeta();
     $('download-btn').disabled = false;
