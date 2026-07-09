@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>miraclefile</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <span class="brand">miraclefile</span>
+    <span class="tag">end-to-end encrypted file sharing</span>
+    <nav><a href="/">new</a> <a href="#" id="nav-about">about</a></nav>
+  </header>
+
+  <main>
+    <!-- Upload view -->
+    <section id="upload" hidden>
+      <p class="lead">Files are encrypted in your browser. The server stores ciphertext only and never sees the key.</p>
+      <form id="upload-form">
+        <div class="row">
+          <label for="file">file</label>
+          <input type="file" id="file" required>
+        </div>
+        <div class="row">
+          <label for="servers">servers</label>
+          <input type="text" id="servers" value="https://blossom.band,https://blossom.nostr.build"
+                 spellcheck="false" autocomplete="off">
+          <span class="hint">comma-separated Blossom servers. Uploads are signed
+            with a throwaway key, so a server cannot link your files to each
+            other. Local dev is <code>http://localhost:3000</code>.</span>
+        </div>
+        <div class="row">
+          <label></label>
+          <button type="submit" id="go">encrypt &amp; upload</button>
+        </div>
+      </form>
+      <div id="up-progress" class="progress" hidden></div>
+      <div id="up-result" class="result" hidden>
+        <p>Share this link. The key lives after the <code>#</code> and is never sent to any server.</p>
+        <textarea id="link" readonly rows="3"></textarea>
+        <button id="copy">copy link</button>
+        <span id="copied" class="ok-note" hidden>copied</span>
+      </div>
+    </section>
+
+    <!-- Download view -->
+    <section id="download" hidden>
+      <table class="meta">
+        <tr><td>name</td><td id="d-name">—</td></tr>
+        <tr><td>type</td><td id="d-mime">—</td></tr>
+        <tr><td>size</td><td id="d-size">—</td></tr>
+        <tr><td>blob</td><td id="d-hash" class="mono">—</td></tr>
+      </table>
+      <button id="download-btn">decrypt &amp; save</button>
+      <div id="dl-progress" class="progress" hidden></div>
+      <div id="dl-error" class="error" hidden></div>
+    </section>
+
+    <!-- About -->
+    <section id="about" hidden>
+      <p>miraclefile encrypts every file client-side with a per-file key
+        (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which
+        browsers never transmit, so storage servers hold only opaque ciphertext.</p>
+      <p class="warn">Demo scope: this build ships link-mode sharing against a
+        Blossom server. The full design (Nostr gift-wrap delivery, duress vaults,
+        self-run inbox relay) is documented in <code>docs/ARCHITECTURE.md</code>
+        and is not wired in here. Transport is plain HTTPS — your IP is visible
+        to the storage servers. Use Tor or a VPN yourself if you need to hide it.</p>
+    </section>
+  </main>
+
+  <footer>
+    <a href="https://github.com/hzrd149/blossom">Blossom</a> ·
+    client-side AES-256-GCM · no server-side keys
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "miraclefile",
+  "version": "0.1.0",
+  "description": "Decentralized, privacy-first file upload/share. Client-side encryption; servers see ciphertext only.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "server": "node server/blossom-mock.js",
+    "web": "node server/static.js",
+    "test": "node test/crypto.test.mjs"
+  },
+  "license": "MIT"
+}
