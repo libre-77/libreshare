@@ -22,6 +22,8 @@ export const STRINGS = {
     'upload.file': 'file',
     'upload.servers': 'servers',
     'upload.serversHint': 'comma-separated Blossom servers. Uploads are signed with a throwaway key, so a server cannot link your files to each other. Local dev is <code>http://localhost:3000</code>.',
+    'upload.embedServers': 'put server list in the link',
+    'upload.embedServersHint': 'off (default): shorter link, but it only opens on apps using the same default servers. on: longer, self-contained link that opens anywhere.',
     'upload.submit': 'encrypt &amp; upload',
 
     'result.linkNote': 'Share this link. The key lives after the <code>#</code> and is never sent to any server.',
@@ -69,6 +71,7 @@ export const STRINGS = {
     'status.encryptingPct': 'encrypting… {pct}%',
     'status.uploading': 'uploading…',
     'status.uploadingPct': 'uploading… {pct}%',
+    'status.confirming': 'bytes sent — waiting for the server(s) to confirm…',
     'status.stored': 'stored on {count} server(s), {size} ciphertext',
     'status.downloading': 'downloading…',
     'status.decrypting': 'decrypting…',
@@ -105,6 +108,8 @@ export const STRINGS = {
     'upload.file': '파일',
     'upload.servers': '서버',
     'upload.serversHint': '쉼표로 구분한 Blossom 서버 주소. 업로드는 일회용 키로 서명하므로 서버가 당신의 파일들을 서로 연결할 수 없습니다. 로컬 개발용은 <code>http://localhost:3000</code>.',
+    'upload.embedServers': '링크에 서버 목록 포함',
+    'upload.embedServersHint': '끄면(기본): 링크가 짧아지지만 같은 기본 서버를 쓰는 앱에서만 열립니다. 켜면: 길지만 어디서나 열리는 자체완결 링크.',
     'upload.submit': '암호화 후 업로드',
 
     'result.linkNote': '이 링크를 공유하세요. 키는 <code>#</code> 뒤에 있으며 어떤 서버로도 전송되지 않습니다.',
@@ -152,6 +157,7 @@ export const STRINGS = {
     'status.encryptingPct': '암호화 중… {pct}%',
     'status.uploading': '업로드 중…',
     'status.uploadingPct': '업로드 중… {pct}%',
+    'status.confirming': '전송 완료 — 서버 확인 대기 중…',
     'status.stored': '서버 {count}곳에 저장됨, 암호문 {size}',
     'status.downloading': '다운로드 중…',
     'status.decrypting': '복호화 중…',

@@ -7,6 +7,12 @@
 import { sha256Hex } from './crypto.js';
 import { ephemeralUploadAuth } from './nostr-auth.js';
 
+// The app's default mirror set. Doubles as the upload-form default and the
+// download fallback when a link omits its own server list (the shorter link
+// mode): a fragment with zero servers is resolved against these. Keep in sync
+// with the #servers input default in index.html.
+export const DEFAULT_SERVERS = ['https://blossom.band', 'https://blossom.nostr.build'];
+
 // The blob starts with a real 1x1 PNG (crypto.js PNG_STUB) with ciphertext after
 // its IEND, so image/png here matches the sniffed magic and media-CDN Blossom
 // servers accept it. X-SHA-256 lets a server verify the address without hashing.

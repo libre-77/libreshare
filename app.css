@@ -68,6 +68,10 @@ a:hover { text-decoration: underline; }
 }
 .hint { color: var(--muted); font-size: 12px; width: 100%; padding-left: 72px; }
 
+.check { display: inline-flex; align-items: center; gap: 6px; }
+.check label { color: var(--fg); cursor: pointer; }
+.check input { cursor: pointer; }
+
 input[type=text], textarea {
   font: inherit;
   padding: 4px 6px;

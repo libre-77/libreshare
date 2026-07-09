@@ -1,5 +1,5 @@
 import { encryptBytes, decryptToSink, readMeta, wipe } from './crypto.js';
-import { upload, download } from './blossom.js';
+import { upload, download, DEFAULT_SERVERS } from './blossom.js';
 import { buildDescriptor, buildLink, decodeFragment } from './descriptor.js';
 import { wrapLink, publishWrap, fetchWraps, generateIdentity } from './nostr-share.js';
 import { initI18n, setLang, getLang, t, humanSize } from './i18n.js';
@@ -58,12 +58,22 @@ $('upload-form').addEventListener('submit', async (e) => {
 
     prog.textContent = t('status.uploading');
     const accepted = await upload(servers, blob, blobHash, undefined, (p) => {
-      prog.textContent = t('status.uploadingPct', { pct: Math.round(p * 100) });
       setBar('up-bar', 50 + p * 50);
+      // p reaches 1 when every byte is sent, but upload() only resolves once the
+      // servers respond (write + hash + round trip) — so show a distinct state
+      // instead of a bar that sits at 100% looking stuck.
+      prog.textContent = p >= 1 ? t('status.confirming') : t('status.uploadingPct', { pct: Math.round(p * 100) });
     });
     setBar('up-bar', 100);
 
-    const descriptor = buildDescriptor({ hash: blobHash, ck, servers: accepted, realSize, meta });
+    // With "embed servers" off (default), the link omits its server list to
+    // stay short and is resolved against DEFAULT_SERVERS on download — so it
+    // only opens on apps that share those defaults. On = self-contained link
+    // carrying its own mirrors, longer but portable to any instance.
+    const embed = $('embed-servers').checked;
+    const descriptor = buildDescriptor({
+      hash: blobHash, ck, servers: embed ? accepted : [], realSize, meta,
+    });
     $('link').value = buildLink(location.origin, descriptor);
     prog.textContent = t('status.stored', { count: accepted.length, size: humanSize(blob.length) });
     setBar('up-bar', 100, false);
@@ -132,7 +142,9 @@ $('download-btn').addEventListener('click', async () => {
   try {
     prog.textContent = t('status.downloading');
     setBar('dl-bar', null); // indeterminate: GET progress isn't tracked
-    const blob = await download(d.servers, d.hash);
+    // A link may omit its servers (short mode); fall back to the app defaults.
+    const servers = d.servers.length ? d.servers : DEFAULT_SERVERS;
+    const blob = await download(servers, d.hash);
 
     // Prefer streaming straight to disk; fall back to an in-memory Blob.
     let sink, finish;
