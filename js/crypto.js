@@ -30,11 +30,9 @@ const CHUNK = 256 * 1024; // plaintext bytes per chunk
 const TAG = 16;
 const MAX_CHUNKS = 0xffffffff; // 32-bit counter ceiling
 
-const KiB = 1024, MiB = 1024 * 1024;
-const LADDER = [
-  64 * KiB, 128 * KiB, 256 * KiB, 512 * KiB,
-  1 * MiB, 2 * MiB, 4 * MiB, 8 * MiB, 16 * MiB, 32 * MiB, 64 * MiB,
-];
+const KiB = 1024;
+const MIN_PAD = 64 * KiB;   // floor: tiny files all bucket here (cheap anonymity)
+const PAD_BITS = 3;         // keep this many significant bits -> overhead <= 2^-3
 
 const subtle = globalThis.crypto.subtle;
 const utf8 = new TextEncoder();
@@ -57,11 +55,18 @@ export function randomBytes(n) {
   return out;
 }
 
-// Pad true length up to the next ladder step (or next 64 MiB above the ladder)
-// so stored size leaks only a coarse bucket, not the exact byte count.
+// Pad the true length up so the stored size leaks only a bucket, not the exact
+// byte count — but bound the waste. Files at or below MIN_PAD all round to
+// MIN_PAD (a shared bucket for small files). Above it, round up to a step that
+// keeps the top PAD_BITS significant bits, so the padding overhead is at most
+// 2^-PAD_BITS (12.5% at PAD_BITS=3). This replaces the old power-of-two ladder,
+// whose next-step rounding could nearly double a file (33 MiB -> 64 MiB) and
+// tip it over a server's size cap. The trade is a finer size bucket, i.e. a bit
+// more size information leaks than with the coarse ladder.
 export function paddedLength(len) {
-  for (const step of LADDER) if (len <= step) return step;
-  return Math.ceil(len / (64 * MiB)) * (64 * MiB);
+  if (len <= MIN_PAD) return MIN_PAD;
+  const step = 2 ** Math.max(0, Math.floor(Math.log2(len)) - PAD_BITS);
+  return Math.ceil(len / step) * step;
 }
 
 async function hkdf(ikm, info, length = 32) {

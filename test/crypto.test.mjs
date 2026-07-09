@@ -34,7 +34,16 @@ function eq(a, b) {
   const { blob, realSize } = await encryptBytes(new Uint8Array(0), 'x', '');
   ok('empty padded to 64KiB bucket', blob.length >= 64 * 1024);
   ok('empty realSize is 0', realSize === 0);
-  ok('paddedLength ladder', paddedLength(1) === 64 * 1024 && paddedLength(300 * 1024) === 512 * 1024);
+  // Small files floor to the 64KiB bucket; above it the padding overhead is
+  // bounded to <=12.5% (top-3-significant-bits rounding) and never shrinks.
+  ok('tiny files floor to 64KiB', paddedLength(1) === 64 * 1024 && paddedLength(64 * 1024) === 64 * 1024);
+  {
+    const M = 1024 * 1024;
+    const sizes = [300 * 1024, 700 * 1024, 9 * M, 33 * M, 65 * M, 100 * M, 4 * 1024 * M + 7];
+    ok('padding never shrinks the file', sizes.every((n) => paddedLength(n) >= n));
+    ok('padding overhead <= 12.5%', sizes.every((n) => paddedLength(n) <= n * 1.125 + 1));
+    ok('33MiB no longer doubles to 64MiB', paddedLength(33 * M) === 36 * M);
+  }
 }
 
 // 3. wrong key fails
