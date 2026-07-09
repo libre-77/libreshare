@@ -40,6 +40,8 @@ cmd_test() {
   have node || die "node not found"
   echo "== unit: crypto =="
   node test/crypto.test.mjs
+  echo "== unit: descriptor =="
+  node test/descriptor.test.mjs
   echo "== unit: gift-wrap =="
   node test/nostr.test.mjs
 
