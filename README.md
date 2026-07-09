@@ -4,8 +4,9 @@ End-to-end encrypted file upload/share. Files are encrypted in the browser; the
 storage server holds ciphertext only and never sees a key. Vanilla JS, no build
 step, no framework.
 
-Full design (Nostr gift-wrap delivery, duress vaults) is in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). This repo ships the working core.
+Full design (duress vaults, self-run inbox relay, Sia-backed storage) is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). This repo ships the working core,
+including Nostr gift-wrap delivery.
 
 ## What works now
 
@@ -20,14 +21,21 @@ Full design (Nostr gift-wrap delivery, duress vaults) is in
   `DELETE` is then impossible; TTL expiry is the only recall.
 - **Link-mode sharing** — the key + descriptor live in the URL fragment (after
   `#`), which the browser never transmits. Servers see only opaque ciphertext.
+- **Nostr gift-wrap delivery** — the link *is* a key, so rather than pasting it
+  into a plaintext channel it can be sealed into a NIP-59 gift wrap (kind:1059)
+  addressed to one recipient and published to their inbox relay. The relay sees
+  only an encrypted blob from a throwaway pubkey at a randomized time — not the
+  link, not who sent it. The inner rumor is unsigned, so a recipient who leaks it
+  cannot prove who sent it (deniability). The **inbox** view fetches and unwraps
+  locally with the recipient's nsec.
 - **Streaming decrypt** — straight to disk via the File System Access API where
   available, otherwise a buffered download.
 
 ## Not in this build (see architecture doc)
 
-Nostr gift-wrap delivery (needs secp256k1 schnorr), duress vaults, self-run
-inbox relay. The `docs/ARCHITECTURE.md` threat model requires these before any
-real high-threat use.
+Duress vaults and a self-run inbox relay (the default relays are public). The
+`docs/ARCHITECTURE.md` threat model requires these before any real high-threat
+use.
 
 Transport is plain HTTPS and the app is transport-agnostic: it does not check
 for or require a Tor circuit. Client IP is therefore visible to storage servers
@@ -58,9 +66,11 @@ the native AEAD, and Firefox Send's actual choice. A fresh random content key
 per file means the deterministic counter nonce never repeats. No WASM, no CDN.
 
 The one third-party dependency is `vendor/nostr-tools.js` — a prebuilt ESM
-bundle (nostr-tools + `@noble/curves`, MIT) used only to schnorr-sign the
-upload-auth event. It is committed, so there is still no build step. Signing is
-not hand-rolled, per `docs/ARCHITECTURE.md` §11.
+bundle (nostr-tools + `@noble/curves`, MIT). It schnorr-signs the upload-auth
+event and provides NIP-44 v2 + NIP-59 for gift-wrap delivery; nothing crypto is
+hand-rolled, per `docs/ARCHITECTURE.md` §11. It is committed, so there is still
+no build step. Regenerate it from `vendor/_entry.js` (rebuild command is in that
+file) only when bumping nostr-tools.
 
 ## Run
 
@@ -76,13 +86,16 @@ Upload a file → copy the link → open it in another tab/browser to decrypt.
 
 ```sh
 node test/crypto.test.mjs                                  # crypto unit tests
+node test/nostr.test.mjs                                   # gift-wrap unit tests
 PORT=3111 node server/blossom-mock.js &                    # then:
 SERVER=http://localhost:3111 node test/e2e.test.mjs        # upload/download e2e
 ```
 
 `crypto.test.mjs` covers round-trip, padding, wrong-key, bit-flip, truncation,
-and header-tamper rejection. `e2e.test.mjs` covers encrypt → upload → download →
-hash-verify → decrypt against a live Blossom server.
+and header-tamper rejection. `nostr.test.mjs` covers gift-wrap round-trip,
+sender hiding, unsigned-rumor deniability, recipient isolation, and key parsing
+(offline). `e2e.test.mjs` covers encrypt → upload → download → hash-verify →
+decrypt against a live Blossom server.
 
 ## Layout
 
@@ -92,12 +105,14 @@ app.css               styles
 js/crypto.js          encryption core (isomorphic: browser + Node 20+)
 js/blossom.js         BUD-01/02 client
 js/nostr-auth.js      throwaway-key BUD-02 upload auth
+js/nostr-share.js     NIP-59 gift-wrap seal/unwrap + relay send/inbox
 js/descriptor.js      link/fragment build + parse
 js/app.js             DOM wiring
-vendor/nostr-tools.js prebuilt nostr-tools bundle (schnorr signing, MIT)
+vendor/nostr-tools.js prebuilt nostr-tools bundle (schnorr + nip44/nip59, MIT)
+vendor/_entry.js      bundle entry + rebuild command
 server/blossom-mock.js  zero-dep content-addressed store (dev)
 server/static.js        zero-dep static server (dev)
-test/                 crypto + e2e tests
+test/                 crypto + gift-wrap + e2e tests
 docs/ARCHITECTURE.md  full threat model and design
 ```
 

@@ -94,6 +94,21 @@ button:disabled { border-color: var(--rule); color: var(--muted); background: va
 
 .error { color: #a11; font-size: 13px; margin-top: 10px; }
 
+.share { margin-top: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.share > p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+
+.inbox-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.inbox-list li {
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inbox-list .from { color: var(--muted); font-size: 12px; width: 100%; }
+.inbox-list .empty { color: var(--muted); font-size: 13px; }
+
 table.meta { border-collapse: collapse; margin-bottom: 14px; width: 100%; }
 table.meta td { padding: 3px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 table.meta td:first-child { color: var(--muted); width: 64px; }

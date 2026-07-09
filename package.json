@@ -7,7 +7,7 @@
   "scripts": {
     "server": "node server/blossom-mock.js",
     "web": "node server/static.js",
-    "test": "node test/crypto.test.mjs"
+    "test": "node test/crypto.test.mjs && node test/nostr.test.mjs"
   },
   "license": "MIT"
 }

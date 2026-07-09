@@ -11,7 +11,7 @@
   <header>
     <span class="brand">miraclefile</span>
     <span class="tag">end-to-end encrypted file sharing</span>
-    <nav><a href="/">new</a> <a href="#" id="nav-about">about</a></nav>
+    <nav><a href="/">new</a> <a href="#" id="nav-inbox">inbox</a> <a href="#" id="nav-about">about</a></nav>
   </header>
 
   <main>
@@ -42,7 +42,63 @@
         <textarea id="link" readonly rows="3"></textarea>
         <button id="copy">copy link</button>
         <span id="copied" class="ok-note" hidden>copied</span>
+
+        <div class="share">
+          <p>Or deliver it privately over Nostr. The link is sealed into a
+            gift wrap so the relay sees neither the link nor who sent it, and a
+            plaintext channel (chat/email) never carries the key.</p>
+          <div class="row">
+            <label for="recip">to</label>
+            <input type="text" id="recip" placeholder="recipient npub1…"
+                   spellcheck="false" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="send-relays">relays</label>
+            <input type="text" id="send-relays" value="wss://relay.damus.io,wss://nos.lol"
+                   spellcheck="false" autocomplete="off">
+            <span class="hint">recipient's inbox relays (comma-separated wss://).</span>
+          </div>
+          <div class="row">
+            <label for="sender">from</label>
+            <input type="text" id="sender" placeholder="your nsec1… (blank = anonymous)"
+                   spellcheck="false" autocomplete="off">
+            <span class="hint">optional. If set, the recipient learns it was
+              you; if blank, a throwaway sender key is used.</span>
+          </div>
+          <div class="row">
+            <label></label>
+            <button id="send-nostr" type="button">seal &amp; send</button>
+            <span id="send-status" class="ok-note" hidden></span>
+          </div>
+          <div id="send-error" class="error" hidden></div>
+        </div>
       </div>
+    </section>
+
+    <!-- Inbox view -->
+    <section id="inbox" hidden>
+      <p class="lead">Check your Nostr inbox relays for gift-wrapped file
+        links addressed to you. Everything is unwrapped locally with your nsec.</p>
+      <div class="row">
+        <label for="my-nsec">your nsec</label>
+        <input type="text" id="my-nsec" placeholder="nsec1…"
+               spellcheck="false" autocomplete="off">
+        <span class="hint">stays in this tab; never sent anywhere. No identity
+          yet? <a href="#" id="gen-id">generate one</a>.</span>
+      </div>
+      <div class="row">
+        <label for="inbox-relays">relays</label>
+        <input type="text" id="inbox-relays" value="wss://relay.damus.io,wss://nos.lol"
+               spellcheck="false" autocomplete="off">
+      </div>
+      <div class="row">
+        <label></label>
+        <button id="check-inbox" type="button">check inbox</button>
+      </div>
+      <div id="gen-id-out" class="result" hidden></div>
+      <div id="inbox-progress" class="progress" hidden></div>
+      <div id="inbox-error" class="error" hidden></div>
+      <ul id="inbox-list" class="inbox-list"></ul>
     </section>
 
     <!-- Download view -->
@@ -63,11 +119,15 @@
       <p>miraclefile encrypts every file client-side with a per-file key
         (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which
         browsers never transmit, so storage servers hold only opaque ciphertext.</p>
-      <p class="warn">Demo scope: this build ships link-mode sharing against a
-        Blossom server. The full design (Nostr gift-wrap delivery, duress vaults,
-        self-run inbox relay) is documented in <code>docs/ARCHITECTURE.md</code>
-        and is not wired in here. Transport is plain HTTPS — your IP is visible
-        to the storage servers. Use Tor or a VPN yourself if you need to hide it.</p>
+      <p>Share the link privately over Nostr: it is sealed into a NIP-59 gift
+        wrap addressed to one recipient, so the relay sees only an encrypted
+        blob from a throwaway key — not the link, not who sent it. The recipient
+        opens their <a href="#" id="about-inbox">inbox</a> and unwraps it locally.</p>
+      <p class="warn">Demo scope: this build ships link-mode sharing and Nostr
+        gift-wrap delivery against public relays. Still unbuilt (see
+        <code>docs/ARCHITECTURE.md</code>): duress vaults and a self-run inbox
+        relay. Transport is plain HTTPS — your IP is visible to the storage
+        servers and relays. Use Tor or a VPN yourself if you need to hide it.</p>
     </section>
   </main>
 
