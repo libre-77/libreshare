@@ -46,32 +46,44 @@ function putXhr(server, blob, expectedHash, authHeader, onProgress) {
   });
 }
 
-// Upload to every server; require at least one success. Returns servers that
-// accepted and confirmed the expected hash. onProgress(fraction) reports overall
-// 0..1 across all mirrors (server i contributes its byte fraction of 1/N), and
-// is only wired to real byte progress in the browser (XHR); elsewhere it still
-// ticks once per completed server so callers get monotonic feedback.
+// Upload to every server in parallel; require at least one success. Returns the
+// servers that accepted and confirmed the expected hash, in the original order.
+// Mirroring the same blob to N independent operators is what gives availability
+// and censorship resistance (ARCHITECTURE.md §2); running the PUTs concurrently
+// makes the wall-clock cost the slowest single mirror instead of their sum.
+//
+// onProgress(fraction) reports overall 0..1 = mean of each mirror's byte
+// fraction. Real byte progress is only available in the browser (XHR); on the
+// fetch path each mirror's slice still snaps to 1 on completion, so the callback
+// stays monotonic.
 export async function upload(servers, blob, expectedHash, authFor = ephemeralUploadAuth, onProgress) {
+  const canXhr = typeof XMLHttpRequest !== 'undefined';
+  const frac = new Array(servers.length).fill(0);
+  const report = onProgress
+    ? () => onProgress(frac.reduce((a, b) => a + b, 0) / servers.length)
+    : null;
+
+  const settled = await Promise.allSettled(servers.map(async (server, i) => {
+    // Each mirror gets its own throwaway upload-auth key (nostr-auth.js), so a
+    // fresh signature per server keeps them unable to link the uploads.
+    const authHeader = authFor ? await authFor(server, expectedHash) : null;
+    const onOne = report ? (f) => { frac[i] = f; report(); } : null;
+    const info = (onProgress && canXhr)
+      ? await putXhr(server, blob, expectedHash, authHeader, onOne)
+      : await put(server, blob, expectedHash, authHeader);
+    if (info.sha256 && info.sha256 !== expectedHash) {
+      throw new Error(`hash mismatch from ${server}`);
+    }
+    if (onOne) onOne(1); // close this mirror's slice even on the fetch path
+    return server;
+  }));
+
   const ok = [];
   const errors = [];
-  const canXhr = typeof XMLHttpRequest !== 'undefined';
-  for (let i = 0; i < servers.length; i++) {
-    const server = servers[i];
-    const report = onProgress ? (f) => onProgress((i + f) / servers.length) : null;
-    try {
-      const authHeader = authFor ? await authFor(server, expectedHash) : null;
-      const info = (onProgress && canXhr)
-        ? await putXhr(server, blob, expectedHash, authHeader, report)
-        : await put(server, blob, expectedHash, authHeader);
-      if (info.sha256 && info.sha256 !== expectedHash) {
-        throw new Error(`hash mismatch from ${server}`);
-      }
-      ok.push(server);
-    } catch (e) {
-      errors.push(e.message);
-    }
-    if (report) report(1); // close out this server's slice even on the fetch path
-  }
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled') ok.push(r.value);
+    else errors.push(`${servers[i]}: ${r.reason?.message || r.reason}`);
+  });
   if (ok.length === 0) throw new Error(`all uploads failed: ${errors.join('; ')}`);
   return ok;
 }
