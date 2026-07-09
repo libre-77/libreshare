@@ -94,6 +94,72 @@ export async function upload(servers, blob, expectedHash, authFor = ephemeralUpl
   return ok;
 }
 
+// --- server size limit detection (BUD-06 HEAD /upload) ------------------------
+// A HEAD /upload carrying X-Content-Length asks the server whether a blob of
+// that size would be accepted, returning 200 (yes) or 413 (too big) WITHOUT
+// transferring any bytes. We binary-search each server's ceiling so the app can
+// pick a part size automatically instead of the user guessing.
+
+const sizeCache = new Map(); // server -> max blob bytes, or null if undetectable
+const PROBE_CAP = 2 * 1024 * 1024 * 1024; // stop probing past 2 GiB
+
+async function headAllows(server, size, authFor) {
+  try {
+    const auth = authFor ? await authFor(server, '0'.repeat(64)) : null;
+    const res = await fetch(`${server.replace(/\/$/, '')}/upload`, {
+      method: 'HEAD',
+      headers: {
+        ...(auth ? { Authorization: auth } : {}),
+        'X-Content-Length': String(size),
+        'X-Content-Type': 'image/png',
+        'X-SHA-256': '0'.repeat(64),
+      },
+    });
+    if (res.status === 200) return true;
+    if (res.status === 413) return false;
+    return null; // 401/404/… -> this server doesn't answer BUD-06 usefully
+  } catch { return null; }
+}
+
+// Largest blob (bytes) a server accepts, or null if it doesn't support the HEAD
+// check. Cached per session.
+export async function maxUploadSize(server, authFor = ephemeralUploadAuth) {
+  if (sizeCache.has(server)) return sizeCache.get(server);
+  let result = null;
+  const oneMiB = 1024 * 1024;
+  const small = await headAllows(server, oneMiB, authFor);
+  if (small === null) {
+    result = null;                         // HEAD unusable
+  } else if (small === false) {
+    result = oneMiB;                       // caps below 1 MiB; treat as 1 MiB
+  } else {
+    let lo = oneMiB, hi = lo * 2;
+    while (hi < PROBE_CAP && (await headAllows(server, hi, authFor)) === true) { lo = hi; hi *= 2; }
+    if (hi >= PROBE_CAP) {
+      result = PROBE_CAP;
+    } else {
+      while (hi - lo > oneMiB) {           // narrow to ~1 MiB
+        const mid = Math.floor((lo + hi) / 2);
+        if (await headAllows(server, mid, authFor)) lo = mid; else hi = mid;
+      }
+      result = lo;
+    }
+  }
+  sizeCache.set(server, result);
+  return result;
+}
+
+// Smallest accepted-blob limit across all targets (a part must fit every mirror).
+// null if no server answered the HEAD check.
+export async function detectMaxBlob(servers, authFor = ephemeralUploadAuth) {
+  const limits = [];
+  for (const s of servers) {
+    const l = await maxUploadSize(s, authFor);
+    if (l != null) limits.push(l);
+  }
+  return limits.length ? Math.min(...limits) : null;
+}
+
 // Try each mirror until one returns bytes whose sha256 matches. A server that
 // serves the wrong bytes is detected and skipped.
 export async function download(servers, hash, onProgress) {

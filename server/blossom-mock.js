@@ -19,7 +19,8 @@ const HEX64 = /^[0-9a-f]{64}$/;
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, HEAD, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-SHA-256');
+  res.setHeader('Access-Control-Allow-Headers',
+    'Authorization, Content-Type, X-SHA-256, X-Content-Length, X-Content-Type');
 }
 
 function readBody(req) {
@@ -37,6 +38,16 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname.slice(1);
 
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
+  // BUD-06 upload requirements: answer whether a blob of X-Content-Length bytes
+  // would be accepted, without a body. This mock caps at MAX_BLOB to let the app
+  // exercise its size-limit detection locally.
+  if (req.method === 'HEAD' && path === 'upload') {
+    const MAX_BLOB = Number(process.env.MAX_BLOB || 25 * 1024 * 1024);
+    const want = Number(req.headers['x-content-length'] || 0);
+    res.writeHead(want > MAX_BLOB ? 413 : 200);
+    return res.end();
+  }
 
   if (req.method === 'PUT' && path === 'upload') {
     const body = await readBody(req);

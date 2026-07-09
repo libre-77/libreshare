@@ -2,7 +2,7 @@ import {
   encryptBytes, encryptPart, encryptMetaField, newContentKey,
   decryptToSink, decryptPartToSink, readMeta, wipe,
 } from './crypto.js';
-import { upload, download, DEFAULT_SERVERS } from './blossom.js';
+import { upload, download, detectMaxBlob, DEFAULT_SERVERS } from './blossom.js';
 import { buildDescriptor, buildMultipartDescriptor, buildLink, decodeFragment } from './descriptor.js';
 import { wrapLink, publishWrap, fetchWraps, generateIdentity } from './nostr-share.js';
 import { initI18n, setLang, getLang, t, humanSize } from './i18n.js';
@@ -40,18 +40,29 @@ $('upload-form').addEventListener('submit', async (e) => {
   const servers = $('servers').value.split(',').map((s) => s.trim()).filter(Boolean);
   if (servers.length === 0) return;
 
-  // Max bytes per uploaded blob. A file above this is split into parts, each its
-  // own blob, so a single blob never exceeds a server's size cap. Padding can
-  // add up to ~12.5%, so the effective ceiling is a bit below this value.
-  const maxPartMB = parseFloat($('max-part').value) || 8;
-  const maxPartBytes = Math.max(64 * 1024, Math.floor(maxPartMB * 1024 * 1024));
-
   $('go').disabled = true;
   show('up-result', false);
   show('up-progress', true);
   const prog = $('up-progress');
 
   try {
+    // Part size: a blank field auto-detects each server's blob cap (BUD-06 HEAD)
+    // and leaves headroom for padding+overhead; a number is a manual MB override.
+    // Cap parts at 100 MiB so a permissive server doesn't force a huge in-memory
+    // blob.
+    const HARD_CAP = 100 * 1024 * 1024;
+    const manualMB = parseFloat($('max-part').value);
+    let maxPartBytes;
+    if (manualMB > 0) {
+      maxPartBytes = Math.max(64 * 1024, Math.floor(manualMB * 1024 * 1024));
+    } else {
+      prog.textContent = t('status.detecting');
+      const limit = await detectMaxBlob(servers);
+      // limit is the max blob; leave ~15% for padding (<=12.5%) + stub/tags.
+      maxPartBytes = limit ? Math.floor(limit / 1.15) : 16 * 1024 * 1024;
+      maxPartBytes = Math.max(64 * 1024, Math.min(maxPartBytes, HARD_CAP));
+    }
+
     prog.textContent = t('status.reading');
     setBar('up-bar', 0);
     const bytes = new Uint8Array(await file.arrayBuffer());
