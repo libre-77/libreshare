@@ -2,6 +2,7 @@ import { encryptBytes, decryptToSink, readMeta } from './crypto.js';
 import { upload, download } from './blossom.js';
 import { buildDescriptor, buildLink, decodeFragment } from './descriptor.js';
 import { wrapLink, publishWrap, fetchWraps, generateIdentity } from './nostr-share.js';
+import { initI18n, setLang, getLang, t, humanSize } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => { $(id).hidden = !on; };
@@ -9,13 +10,7 @@ const SECTIONS = ['upload', 'download', 'about', 'inbox'];
 const showOnly = (id) => SECTIONS.forEach((s) => show(s, s === id));
 const csv = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
 
-function humanSize(n) {
-  if (n < 1024) return `${n} B`;
-  const u = ['KB', 'MB', 'GB'];
-  let i = -1, v = n;
-  do { v /= 1024; i++; } while (v >= 1024 && i < u.length - 1);
-  return `${v.toFixed(v < 10 ? 1 : 0)} ${u[i]}`;
-}
+initI18n();
 
 function route() {
   const frag = location.hash.slice(1);
@@ -38,23 +33,23 @@ $('upload-form').addEventListener('submit', async (e) => {
   const prog = $('up-progress');
 
   try {
-    prog.textContent = 'reading…';
+    prog.textContent = t('status.reading');
     const bytes = new Uint8Array(await file.arrayBuffer());
 
-    prog.textContent = 'encrypting…';
+    prog.textContent = t('status.encrypting');
     const { blob, blobHash, ck, realSize, meta } =
       await encryptBytes(bytes, file.name, file.type || 'application/octet-stream',
-        (p) => { prog.textContent = `encrypting… ${Math.round(p * 100)}%`; });
+        (p) => { prog.textContent = t('status.encryptingPct', { pct: Math.round(p * 100) }); });
 
-    prog.textContent = 'uploading…';
+    prog.textContent = t('status.uploading');
     const accepted = await upload(servers, blob, blobHash);
 
     const descriptor = buildDescriptor({ hash: blobHash, ck, servers: accepted, realSize, meta });
     $('link').value = buildLink(location.origin, descriptor);
-    prog.textContent = `stored on ${accepted.length} server(s), ${humanSize(blob.length)} ciphertext`;
+    prog.textContent = t('status.stored', { count: accepted.length, size: humanSize(blob.length) });
     show('up-result', true);
   } catch (err) {
-    prog.textContent = `error: ${err.message}`;
+    prog.textContent = t('error.generic', { msg: err.message });
   } finally {
     $('go').disabled = false;
   }
@@ -78,18 +73,25 @@ async function renderDownload(frag) {
     const d = decodeFragment(frag);
     const meta = await readMeta(d.ck, d.meta);
     current = { d, meta };
-    $('d-name').textContent = meta.name || '(unnamed)';
-    $('d-mime').textContent = meta.mime || 'application/octet-stream';
-    $('d-size').textContent = humanSize(d.realSize);
-    $('d-hash').textContent = d.hash;
+    renderDownloadMeta();
     $('download-btn').disabled = false;
   } catch (err) {
+    current = null;
     $('d-name').textContent = '—';
     $('d-hash').textContent = '—';
     $('download-btn').disabled = true;
     show('dl-error', true);
-    $('dl-error').textContent = `invalid or corrupt link: ${err.message}`;
+    $('dl-error').textContent = t('error.badLink', { msg: err.message });
   }
+}
+
+function renderDownloadMeta() {
+  if (!current) return;
+  const { d, meta } = current;
+  $('d-name').textContent = meta.name || t('download.unnamed');
+  $('d-mime').textContent = meta.mime || 'application/octet-stream';
+  $('d-size').textContent = humanSize(d.realSize);
+  $('d-hash').textContent = d.hash;
 }
 
 $('download-btn').addEventListener('click', async () => {
@@ -101,7 +103,7 @@ $('download-btn').addEventListener('click', async () => {
   const prog = $('dl-progress');
 
   try {
-    prog.textContent = 'downloading…';
+    prog.textContent = t('status.downloading');
     const blob = await download(d.servers, d.hash);
 
     // Prefer streaming straight to disk; fall back to an in-memory Blob.
@@ -123,14 +125,14 @@ $('download-btn').addEventListener('click', async () => {
       };
     }
 
-    prog.textContent = 'decrypting…';
+    prog.textContent = t('status.decrypting');
     await decryptToSink(blob, d.ck, d.realSize, sink,
-      (p) => { prog.textContent = `decrypting… ${Math.round(p * 100)}%`; });
+      (p) => { prog.textContent = t('status.decryptingPct', { pct: Math.round(p * 100) }); });
     await finish();
-    prog.textContent = 'done — saved.';
+    prog.textContent = t('status.saved');
   } catch (err) {
     show('dl-error', true);
-    $('dl-error').textContent = `failed: ${err.message}`;
+    $('dl-error').textContent = t('error.downloadFailed', { msg: err.message });
     prog.textContent = '';
     $('download-btn').disabled = false;
   }
@@ -147,18 +149,18 @@ $('send-nostr').addEventListener('click', async () => {
   show('send-error', false);
   show('send-status', false);
   if (!link) return;
-  if (!recip) { show('send-error', true); $('send-error').textContent = 'recipient npub required'; return; }
-  if (relays.length === 0) { show('send-error', true); $('send-error').textContent = 'at least one relay required'; return; }
+  if (!recip) { show('send-error', true); $('send-error').textContent = t('error.needRecipient'); return; }
+  if (relays.length === 0) { show('send-error', true); $('send-error').textContent = t('error.needRelay'); return; }
 
   $('send-nostr').disabled = true;
   try {
     const wrap = wrapLink(link, recip, sender);
     const accepted = await publishWrap(relays, wrap);
     show('send-status', true);
-    $('send-status').textContent = `sealed & sent via ${accepted.length} relay(s)`;
+    $('send-status').textContent = t('status.sent', { count: accepted.length });
   } catch (err) {
     show('send-error', true);
-    $('send-error').textContent = `send failed: ${err.message}`;
+    $('send-error').textContent = t('error.sendFailed', { msg: err.message });
   } finally {
     $('send-nostr').disabled = false;
   }
@@ -166,37 +168,38 @@ $('send-nostr').addEventListener('click', async () => {
 
 // ---- Inbox (fetch + unwrap gift wraps addressed to me) ----
 
-$('gen-id').addEventListener('click', (e) => {
-  e.preventDefault();
-  const id = generateIdentity();
-  $('my-nsec').value = id.nsec;
+let lastIdentity = null;
+let lastItems = null;
+
+function renderIdentity() {
+  if (!lastIdentity) return;
   show('gen-id-out', true);
-  $('gen-id-out').innerHTML =
-    '<p>New identity. Save your <b>nsec</b> (secret) somewhere safe and give out your <b>npub</b>:</p>';
+  $('gen-id-out').innerHTML = `<p>${t('inbox.genIdNote')}</p>`;
   const npub = document.createElement('textarea');
-  npub.readOnly = true; npub.rows = 2; npub.value = id.npub;
+  npub.readOnly = true; npub.rows = 2; npub.value = lastIdentity.npub;
   $('gen-id-out').appendChild(npub);
-});
+}
 
 $('check-inbox').addEventListener('click', async () => {
   const nsec = $('my-nsec').value.trim();
   const relays = csv($('inbox-relays').value);
   show('inbox-error', false);
   $('inbox-list').innerHTML = '';
-  if (!nsec) { show('inbox-error', true); $('inbox-error').textContent = 'your nsec required'; return; }
-  if (relays.length === 0) { show('inbox-error', true); $('inbox-error').textContent = 'at least one relay required'; return; }
+  if (!nsec) { show('inbox-error', true); $('inbox-error').textContent = t('error.needNsec'); return; }
+  if (relays.length === 0) { show('inbox-error', true); $('inbox-error').textContent = t('error.needRelay'); return; }
 
   $('check-inbox').disabled = true;
   show('inbox-progress', true);
-  $('inbox-progress').textContent = 'querying relays…';
+  $('inbox-progress').textContent = t('inbox.querying');
   try {
     const items = await fetchWraps(relays, nsec);
     show('inbox-progress', false);
+    lastItems = items;
     renderInbox(items);
   } catch (err) {
     show('inbox-progress', false);
     show('inbox-error', true);
-    $('inbox-error').textContent = `inbox failed: ${err.message}`;
+    $('inbox-error').textContent = t('error.inboxFailed', { msg: err.message });
   } finally {
     $('check-inbox').disabled = false;
   }
@@ -207,7 +210,10 @@ function renderInbox(items) {
   ul.innerHTML = '';
   if (items.length === 0) {
     const li = document.createElement('li');
-    li.innerHTML = '<span class="empty">no wrapped files found for this key.</span>';
+    const empty = document.createElement('span');
+    empty.className = 'empty';
+    empty.textContent = t('inbox.empty');
+    li.appendChild(empty);
     ul.appendChild(li);
     return;
   }
@@ -215,17 +221,17 @@ function renderInbox(items) {
     const li = document.createElement('li');
     const open = document.createElement('button');
     open.type = 'button';
-    open.textContent = 'open';
+    open.textContent = t('inbox.open');
     open.addEventListener('click', () => {
       const hash = it.link.includes('#') ? it.link.slice(it.link.indexOf('#') + 1) : '';
-      if (!hash) { show('inbox-error', true); $('inbox-error').textContent = 'link has no key fragment'; return; }
+      if (!hash) { show('inbox-error', true); $('inbox-error').textContent = t('error.noFragment'); return; }
       location.hash = hash; // triggers route() -> download view
     });
     const from = document.createElement('span');
     from.className = 'from';
-    from.textContent = `from ${it.npub.slice(0, 16)}…`;
+    from.textContent = t('inbox.from', { npub: it.npub.slice(0, 16) });
     li.appendChild(open);
-    li.appendChild(document.createTextNode(' a shared file'));
+    li.appendChild(document.createTextNode(t('inbox.sharedFile')));
     li.appendChild(from);
     ul.appendChild(li);
   }
@@ -235,7 +241,47 @@ function renderInbox(items) {
 
 $('nav-inbox').addEventListener('click', (e) => { e.preventDefault(); showOnly('inbox'); });
 $('nav-about').addEventListener('click', (e) => { e.preventDefault(); showOnly('about'); });
-$('about-inbox').addEventListener('click', (e) => { e.preventDefault(); showOnly('inbox'); });
+
+// #gen-id and #about-inbox live inside translated markup, so applyI18n()
+// replaces those nodes on every language switch. Delegate instead of binding.
+document.addEventListener('click', (e) => {
+  const target = e.target.closest?.('#gen-id, #about-inbox, .lang-pick');
+  if (!target) return;
+  e.preventDefault();
+
+  if (target.id === 'about-inbox') { showOnly('inbox'); return; }
+  if (target.id === 'gen-id') {
+    lastIdentity = generateIdentity();
+    $('my-nsec').value = lastIdentity.nsec;
+    renderIdentity();
+    return;
+  }
+  switchLang(target.dataset.lang);
+});
+
+// ---- Language ----
+
+function markActiveLang() {
+  for (const a of document.querySelectorAll('.lang-pick')) {
+    a.classList.toggle('active', a.dataset.lang === getLang());
+  }
+}
+
+function switchLang(next) {
+  if (next === getLang()) return;
+  setLang(next);           // persists + re-applies static strings
+  refreshDynamic();
+}
+
+/** Re-render everything JS built imperatively; applyI18n only covers markup. */
+function refreshDynamic() {
+  markActiveLang();
+  renderDownloadMeta();
+  if (lastIdentity) renderIdentity();
+  if (lastItems) renderInbox(lastItems);
+}
+
+markActiveLang();
 
 window.addEventListener('hashchange', route);
 route();

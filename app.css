@@ -32,6 +32,9 @@ header .brand { font-weight: bold; }
 header .tag { color: var(--muted); font-size: 12px; }
 header nav { margin-left: auto; font-size: 12px; }
 header nav a { margin-left: 8px; }
+header .lang { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--rule); }
+header .lang a { color: var(--muted); }
+header .lang a.active { color: var(--accent); font-weight: bold; }
 
 main {
   flex: 1;
