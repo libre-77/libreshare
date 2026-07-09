@@ -17,8 +17,9 @@ including Nostr gift-wrap delivery.
   Downloads verify the hash, so a server serving wrong bytes is rejected.
 - **Multipart split** — a large file is split into several blobs, each uploaded
   separately, so no single blob trips a server's size cap (the usual `413`). The
-  part size auto-detects each server's limit over BUD-06 `HEAD /upload` (or a
-  manual MB override); the min across mirrors governs. Each part encrypts under
+  part size comes from a pre-measured table for the servers the app ships with
+  (no network), and auto-detects any other server's limit over BUD-06
+  `HEAD /upload` (or a manual MB override); the min across mirrors governs. Each part encrypts under
   its own CK subkey (HKDF per index) so the reset STREAM counter never reuses a
   nonce; the link (descriptor v3) carries the ordered part hashes, and download
   streams the parts back in order.

@@ -102,6 +102,19 @@ export async function upload(servers, blob, expectedHash, authFor = ephemeralUpl
 
 const sizeCache = new Map(); // server -> max blob bytes, or null if undetectable
 const PROBE_CAP = 2 * 1024 * 1024 * 1024; // stop probing past 2 GiB
+const MiB = 1024 * 1024;
+
+// Blob-size caps measured out of band (BUD-06 HEAD, 2026-07) for the servers the
+// app ships with, so the common case needs no runtime probing (instant, and no
+// 413 console noise from the search). Only servers absent here are probed live.
+// Re-measure if a server changes its policy.
+const KNOWN_LIMITS = {
+  'https://blossom.band': 20 * MiB,
+  'https://blossom.nostr.build': 20 * MiB,
+  'https://nostr.download': 1024 * MiB, // HEAD accepts >1 GiB; conservative floor
+};
+
+const normServer = (s) => s.replace(/\/$/, '');
 
 async function headAllows(server, size, authFor) {
   try {
@@ -124,7 +137,9 @@ async function headAllows(server, size, authFor) {
 // Largest blob (bytes) a server accepts, or null if it doesn't support the HEAD
 // check. Cached per session.
 export async function maxUploadSize(server, authFor = ephemeralUploadAuth) {
-  if (sizeCache.has(server)) return sizeCache.get(server);
+  const key = normServer(server);
+  if (KNOWN_LIMITS[key] != null) return KNOWN_LIMITS[key]; // pre-measured, no probe
+  if (sizeCache.has(key)) return sizeCache.get(key);
   let result = null;
   const oneMiB = 1024 * 1024;
   const small = await headAllows(server, oneMiB, authFor);
@@ -145,7 +160,7 @@ export async function maxUploadSize(server, authFor = ephemeralUploadAuth) {
       result = lo;
     }
   }
-  sizeCache.set(server, result);
+  sizeCache.set(key, result);
   return result;
 }
 
