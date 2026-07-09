@@ -40,6 +40,14 @@ const subtle = globalThis.crypto.subtle;
 const utf8 = new TextEncoder();
 const utf8d = new TextDecoder();
 
+// Best-effort scrub of a byte buffer's contents. JS gives no guarantee (the GC
+// may have already copied it, and strings are immutable and cannot be wiped at
+// all), but overwriting the Uint8Array we control removes the most obvious
+// residue of a key or plaintext from the heap. No-op for anything non-array.
+export function wipe(bytes) {
+  if (bytes instanceof Uint8Array) bytes.fill(0);
+}
+
 export function randomBytes(n) {
   // getRandomValues rejects requests over 65,536 bytes, so fill in slices.
   const out = new Uint8Array(n);
@@ -167,6 +175,10 @@ export async function encryptBytes(plain, name, mime, onProgress) {
   const blob = concat(parts);
   const blobHash = await sha256Hex(blob);
   const meta = await encryptMeta(ck, { name, mime });
+  // The padded buffer (and the chunk views into it) held the plaintext; scrub
+  // it now that the ciphertext blob is built. `plain` and `ck` are the caller's
+  // to wipe once it no longer needs them (ck is still returned for the link).
+  wipe(padded);
   return { blob, blobHash, ck, realSize, meta };
 }
 
@@ -195,8 +207,12 @@ export async function decryptToSink(blob, ck, realSize, sink, onProgress) {
     );
     const pt = new Uint8Array(ptBuf);
     const remaining = realSize - written;
-    if (remaining > 0) sink(pt.length <= remaining ? pt : pt.subarray(0, remaining));
+    // Await the sink so the plaintext is fully consumed (written to disk or
+    // copied) before we scrub the buffer — otherwise a streamed write could
+    // still be reading it. `sink` may return a promise or undefined; both await.
+    if (remaining > 0) await sink(pt.length <= remaining ? pt : pt.subarray(0, remaining));
     written += pt.length;
+    wipe(pt); // drop this chunk's plaintext from the heap
     if (onProgress) onProgress((i + 1) / nChunks);
   }
 }

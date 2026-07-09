@@ -1,4 +1,4 @@
-import { encryptBytes, decryptToSink, readMeta } from './crypto.js';
+import { encryptBytes, decryptToSink, readMeta, wipe } from './crypto.js';
 import { upload, download } from './blossom.js';
 import { buildDescriptor, buildLink, decodeFragment } from './descriptor.js';
 import { wrapLink, publishWrap, fetchWraps, generateIdentity } from './nostr-share.js';
@@ -9,6 +9,16 @@ const show = (id, on = true) => { $(id).hidden = !on; };
 const SECTIONS = ['upload', 'download', 'about', 'inbox'];
 const showOnly = (id) => SECTIONS.forEach((s) => show(s, s === id));
 const csv = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+
+// Drive a <progress> bar. pct null -> indeterminate (drop the value attribute);
+// a number -> determinate 0..100. Pass on:false to hide it.
+function setBar(id, pct, on = true) {
+  const b = $(id);
+  if (!b) return;
+  if (pct == null) b.removeAttribute('value');
+  else b.value = Math.max(0, Math.min(100, pct));
+  b.hidden = !on;
+}
 
 initI18n();
 
@@ -34,22 +44,39 @@ $('upload-form').addEventListener('submit', async (e) => {
 
   try {
     prog.textContent = t('status.reading');
+    setBar('up-bar', 0);
     const bytes = new Uint8Array(await file.arrayBuffer());
 
+    // Encryption fills the first half of the bar, upload the second half.
     prog.textContent = t('status.encrypting');
     const { blob, blobHash, ck, realSize, meta } =
       await encryptBytes(bytes, file.name, file.type || 'application/octet-stream',
-        (p) => { prog.textContent = t('status.encryptingPct', { pct: Math.round(p * 100) }); });
+        (p) => {
+          prog.textContent = t('status.encryptingPct', { pct: Math.round(p * 100) });
+          setBar('up-bar', p * 50);
+        });
 
     prog.textContent = t('status.uploading');
-    const accepted = await upload(servers, blob, blobHash);
+    const accepted = await upload(servers, blob, blobHash, undefined, (p) => {
+      prog.textContent = t('status.uploadingPct', { pct: Math.round(p * 100) });
+      setBar('up-bar', 50 + p * 50);
+    });
+    setBar('up-bar', 100);
 
     const descriptor = buildDescriptor({ hash: blobHash, ck, servers: accepted, realSize, meta });
     $('link').value = buildLink(location.origin, descriptor);
     prog.textContent = t('status.stored', { count: accepted.length, size: humanSize(blob.length) });
+    setBar('up-bar', 100, false);
     show('up-result', true);
+
+    // The link now carries base64url copies of the key and meta; scrub the raw
+    // byte buffers so the plaintext file and key don't linger on the heap. The
+    // link string itself is what the user needs and cannot be wiped — clear it
+    // with the "clear" action (or on tab exit) once it has been shared.
+    wipe(ck); wipe(meta); wipe(bytes);
   } catch (err) {
     prog.textContent = t('error.generic', { msg: err.message });
+    setBar('up-bar', null, false);
   } finally {
     $('go').disabled = false;
   }
@@ -104,6 +131,7 @@ $('download-btn').addEventListener('click', async () => {
 
   try {
     prog.textContent = t('status.downloading');
+    setBar('dl-bar', null); // indeterminate: GET progress isn't tracked
     const blob = await download(d.servers, d.hash);
 
     // Prefer streaming straight to disk; fall back to an in-memory Blob.
@@ -127,13 +155,18 @@ $('download-btn').addEventListener('click', async () => {
 
     prog.textContent = t('status.decrypting');
     await decryptToSink(blob, d.ck, d.realSize, sink,
-      (p) => { prog.textContent = t('status.decryptingPct', { pct: Math.round(p * 100) }); });
+      (p) => {
+        prog.textContent = t('status.decryptingPct', { pct: Math.round(p * 100) });
+        setBar('dl-bar', p * 100);
+      });
     await finish();
     prog.textContent = t('status.saved');
+    setBar('dl-bar', 100, false);
   } catch (err) {
     show('dl-error', true);
     $('dl-error').textContent = t('error.downloadFailed', { msg: err.message });
     prog.textContent = '';
+    setBar('dl-bar', null, false);
     $('download-btn').disabled = false;
   }
 });
@@ -237,10 +270,49 @@ function renderInbox(items) {
   }
 }
 
+// ---- Clear sensitive state (residue reduction) ----
+
+// Wipe every place a key, link, or plaintext can linger: the byte buffers we
+// still hold, the DOM fields showing the link / nsec / recipient, the selected
+// file, and the in-memory references. This is best-effort — strings (the link,
+// an nsec) are immutable and cannot be scrubbed from memory, and the OS may have
+// paged memory to disk — but it removes the obvious residue and is the exit
+// point the user (or tab-close) triggers.
+function clearSensitive() {
+  if (current?.d?.ck) wipe(current.d.ck);
+  current = null;
+  lastIdentity = null;
+  lastItems = null;
+
+  for (const id of ['link', 'recip', 'sender', 'my-nsec', 'file']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  $('gen-id-out').innerHTML = '';
+  $('inbox-list').innerHTML = '';
+  show('gen-id-out', false);
+  show('up-result', false);
+  show('send-status', false);
+  show('send-error', false);
+  setBar('up-bar', null, false);
+  setBar('dl-bar', null, false);
+  $('up-progress').textContent = '';
+}
+
 // ---- Nav ----
 
 $('nav-inbox').addEventListener('click', (e) => { e.preventDefault(); showOnly('inbox'); });
 $('nav-about').addEventListener('click', (e) => { e.preventDefault(); showOnly('about'); });
+$('nav-clear').addEventListener('click', (e) => {
+  e.preventDefault();
+  clearSensitive();
+  showOnly('upload');
+  $('up-progress').textContent = t('status.cleared');
+  show('up-progress', true);
+});
+
+// Scrub on tab close / navigation away (also covers bfcache freeze).
+window.addEventListener('pagehide', clearSensitive);
 
 // #gen-id and #about-inbox live inside translated markup, so applyI18n()
 // replaces those nodes on every language switch. Delegate instead of binding.

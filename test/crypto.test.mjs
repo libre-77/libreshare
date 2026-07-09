@@ -1,5 +1,5 @@
 // Run: node test/crypto.test.mjs
-import { encryptBytes, decryptBytes, decryptToSink, readMeta, randomBytes, paddedLength } from '../js/crypto.js';
+import { encryptBytes, decryptBytes, decryptToSink, readMeta, randomBytes, paddedLength, wipe } from '../js/crypto.js';
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -71,6 +71,43 @@ function eq(a, b) {
   const t = blob.slice();
   t[0] ^= 0xff;
   await throws('bad magic rejected', () => decryptBytes(t, ck, realSize));
+}
+
+// 7. wipe() zeroizes a buffer and is a no-op on non-arrays
+{
+  const b = randomBytes(64);
+  wipe(b);
+  ok('wipe zeroes every byte', b.every((x) => x === 0));
+  let threw = false;
+  try { wipe(undefined); wipe('nope'); wipe(null); } catch { threw = true; }
+  ok('wipe is a no-op on non-arrays', !threw);
+}
+
+// 8. encrypt still round-trips after internally scrubbing its plaintext buffer,
+//    and does not corrupt the caller's input (only the internal padded copy).
+{
+  const plain = randomBytes(300 * 1024); // spans chunks + padding tail
+  const snapshot = plain.slice();
+  const { blob, ck, realSize } = await encryptBytes(plain, 'a', '');
+  ok('caller plaintext untouched by internal wipe', eq(plain, snapshot));
+  const out = await decryptBytes(blob, ck, realSize);
+  ok('round trip intact after zeroize', eq(out, snapshot));
+}
+
+// 9. decryptToSink awaits an async sink before scrubbing, so a streamed
+//    consumer still receives correct bytes (no wipe-before-write race).
+{
+  const plain = randomBytes(600 * 1024);
+  const { blob, ck, realSize } = await encryptBytes(plain, 'a', '');
+  const parts = [];
+  await decryptToSink(blob, ck, realSize, async (p) => {
+    await Promise.resolve();          // force the sink to be genuinely async
+    parts.push(p.slice());            // copy as a real streaming sink would
+  });
+  let n = 0; for (const p of parts) n += p.length;
+  const joined = new Uint8Array(n); let o = 0;
+  for (const p of parts) { joined.set(p, o); o += p.length; }
+  ok('async sink receives intact plaintext', eq(joined, plain));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

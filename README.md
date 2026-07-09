@@ -121,3 +121,11 @@ docs/ARCHITECTURE.md  full threat model and design
 Unaudited. The construction is a composition of reviewed patterns (STREAM AEAD,
 HKDF domain separation, fragment key delivery), but the composition itself has
 not had an independent review. Do not use for real high-threat scenarios yet.
+
+Content-key and plaintext byte buffers are zeroized after use (`wipe()` in
+`js/crypto.js`), and **clear** (or closing the tab, via `pagehide`) scrubs the
+link, nsec, recipient, and selected file from the tab. This is best-effort
+residue reduction only: JS strings (the link, an nsec) are immutable and cannot
+be wiped, the GC may have already copied a buffer, and the OS may page memory to
+disk. The device-seizure defense the threat model asks for (duress vaults,
+`docs/ARCHITECTURE.md` §4) is still unbuilt.

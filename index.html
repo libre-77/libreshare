@@ -14,6 +14,7 @@
     <nav>
       <a href="/" data-i18n="nav.new">new</a>
       <a href="#" id="nav-inbox" data-i18n="nav.inbox">inbox</a>
+      <a href="#" id="nav-clear" data-i18n="nav.clear">clear</a>
       <a href="#" id="nav-about" data-i18n="nav.about">about</a>
       <span class="lang">
         <a href="#" class="lang-pick" data-lang="en">EN</a>
@@ -43,6 +44,7 @@
         </div>
       </form>
       <div id="up-progress" class="progress" hidden></div>
+      <progress id="up-bar" class="bar" max="100" hidden></progress>
       <div id="up-result" class="result" hidden>
         <p data-i18n="result.linkNote"></p>
         <textarea id="link" readonly rows="3"></textarea>
@@ -112,6 +114,7 @@
       </table>
       <button id="download-btn" data-i18n="download.submit"></button>
       <div id="dl-progress" class="progress" hidden></div>
+      <progress id="dl-bar" class="bar" max="100" hidden></progress>
       <div id="dl-error" class="error" hidden></div>
     </section>
 

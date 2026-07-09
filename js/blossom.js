@@ -21,15 +21,48 @@ async function put(server, blob, expectedHash, authHeader) {
   return res.json().catch(() => ({}));
 }
 
+// XHR variant, used only in the browser when a progress callback is supplied:
+// fetch() cannot report request-upload progress, but XHR's upload.onprogress
+// can. onProgress receives a 0..1 fraction of this blob's bytes sent.
+function putXhr(server, blob, expectedHash, authHeader, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `${server.replace(/\/$/, '')}/upload`);
+    xhr.setRequestHeader('Content-Type', 'image/png');
+    if (expectedHash) xhr.setRequestHeader('X-SHA-256', expectedHash);
+    if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let info = {};
+        try { info = JSON.parse(xhr.responseText); } catch { /* empty body ok */ }
+        resolve(info);
+      } else reject(new Error(`upload ${server} -> ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error(`upload ${server} -> network error`));
+    xhr.send(blob);
+  });
+}
+
 // Upload to every server; require at least one success. Returns servers that
-// accepted and confirmed the expected hash.
-export async function upload(servers, blob, expectedHash, authFor = ephemeralUploadAuth) {
+// accepted and confirmed the expected hash. onProgress(fraction) reports overall
+// 0..1 across all mirrors (server i contributes its byte fraction of 1/N), and
+// is only wired to real byte progress in the browser (XHR); elsewhere it still
+// ticks once per completed server so callers get monotonic feedback.
+export async function upload(servers, blob, expectedHash, authFor = ephemeralUploadAuth, onProgress) {
   const ok = [];
   const errors = [];
-  for (const server of servers) {
+  const canXhr = typeof XMLHttpRequest !== 'undefined';
+  for (let i = 0; i < servers.length; i++) {
+    const server = servers[i];
+    const report = onProgress ? (f) => onProgress((i + f) / servers.length) : null;
     try {
       const authHeader = authFor ? await authFor(server, expectedHash) : null;
-      const info = await put(server, blob, expectedHash, authHeader);
+      const info = (onProgress && canXhr)
+        ? await putXhr(server, blob, expectedHash, authHeader, report)
+        : await put(server, blob, expectedHash, authHeader);
       if (info.sha256 && info.sha256 !== expectedHash) {
         throw new Error(`hash mismatch from ${server}`);
       }
@@ -37,6 +70,7 @@ export async function upload(servers, blob, expectedHash, authFor = ephemeralUpl
     } catch (e) {
       errors.push(e.message);
     }
+    if (report) report(1); // close out this server's slice even on the fetch path
   }
   if (ok.length === 0) throw new Error(`all uploads failed: ${errors.join('; ')}`);
   return ok;
