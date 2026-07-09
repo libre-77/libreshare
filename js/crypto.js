@@ -78,9 +78,20 @@ async function hkdf(ikm, info, length = 32) {
   return new Uint8Array(bits);
 }
 
-async function contentKey(ck) {
-  const raw = await hkdf(ck, 'miraclefile/v1/content');
+// Per-part content key. A multipart upload splits the plaintext into separate
+// blobs, and each blob re-uses the STREAM counter nonce from 0 — so every part
+// MUST encrypt under a distinct key or two parts would reuse an (key, nonce)
+// pair, which is fatal for AES-GCM. Part 0 keeps the original info string, so a
+// single-part file is byte-identical to the pre-multipart format (and old links
+// still decrypt); parts 1.. derive a fresh key from the same CK.
+async function contentKey(ck, part = 0) {
+  const info = part === 0 ? 'miraclefile/v1/content' : `miraclefile/v1/content/${part}`;
+  const raw = await hkdf(ck, info);
   return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+export function newContentKey() {
+  return randomBytes(32);
 }
 
 async function metaKeyOf(ck) {
@@ -150,12 +161,11 @@ async function decryptMeta(ck, blob) {
   return JSON.parse(utf8d.decode(pt));
 }
 
-// Encrypt plaintext bytes into an uploadable blob.
-// Returns { blob, blobHash, ck, realSize, meta } — meta is the encrypted
-// {name, mime} descriptor field (Uint8Array). ck is the 32-byte content key.
-export async function encryptBytes(plain, name, mime, onProgress) {
-  const ck = randomBytes(32);
-  const key = await contentKey(ck);
+// Encrypt one plaintext part into an uploadable blob under CK's `part` subkey.
+// Returns { blob, blobHash, realSize }. Single-blob uploads use part 0; a
+// multipart upload calls this once per slice with an increasing part index.
+export async function encryptPart(plain, ck, part, onProgress) {
+  const key = await contentKey(ck, part);
   const realSize = plain.length;
 
   const padded = new Uint8Array(paddedLength(realSize));
@@ -163,7 +173,7 @@ export async function encryptBytes(plain, name, mime, onProgress) {
 
   const aad = header();
   const nChunks = Math.max(1, Math.ceil(padded.length / CHUNK));
-  if (nChunks > MAX_CHUNKS) throw new Error('file too large');
+  if (nChunks > MAX_CHUNKS) throw new Error('part too large');
 
   const parts = [PNG_STUB, aad];
   for (let i = 0; i < nChunks; i++) {
@@ -179,17 +189,29 @@ export async function encryptBytes(plain, name, mime, onProgress) {
 
   const blob = concat(parts);
   const blobHash = await sha256Hex(blob);
-  const meta = await encryptMeta(ck, { name, mime });
-  // The padded buffer (and the chunk views into it) held the plaintext; scrub
-  // it now that the ciphertext blob is built. `plain` and `ck` are the caller's
-  // to wipe once it no longer needs them (ck is still returned for the link).
-  wipe(padded);
+  wipe(padded); // the padded buffer held plaintext; scrub it
+  return { blob, blobHash, realSize };
+}
+
+// Build the encrypted {name, mime} descriptor field (Uint8Array).
+export function encryptMetaField(ck, name, mime) {
+  return encryptMeta(ck, { name, mime });
+}
+
+// Encrypt plaintext bytes into a single uploadable blob (part 0).
+// Returns { blob, blobHash, ck, realSize, meta }. Convenience wrapper over
+// encryptPart for the common single-part case; ck is a fresh 32-byte key.
+export async function encryptBytes(plain, name, mime, onProgress) {
+  const ck = newContentKey();
+  const { blob, blobHash, realSize } = await encryptPart(plain, ck, 0, onProgress);
+  const meta = await encryptMetaField(ck, name, mime);
   return { blob, blobHash, ck, realSize, meta };
 }
 
-// Decrypt a blob, streaming plaintext to sink(Uint8Array) chunk by chunk.
-// Throws on any authentication failure (tamper, truncation, wrong key).
-export async function decryptToSink(blob, ck, realSize, sink, onProgress) {
+// Decrypt one part's blob under CK's `part` subkey, streaming plaintext to
+// sink(Uint8Array) chunk by chunk. Throws on any authentication failure (tamper,
+// truncation, wrong key). onProgress reports this part's own 0..1.
+export async function decryptPartToSink(blob, ck, part, realSize, sink, onProgress) {
   blob = stripPngStub(blob);
   if (blob.length < HEADER_LEN) throw new Error('blob too short');
   const aad = blob.subarray(0, HEADER_LEN);
@@ -197,7 +219,7 @@ export async function decryptToSink(blob, ck, realSize, sink, onProgress) {
   if (aad[4] !== VERSION) throw new Error('unsupported version');
   const chunkSize = new DataView(aad.buffer, aad.byteOffset).getUint32(5, false);
 
-  const key = await contentKey(ck);
+  const key = await contentKey(ck, part);
   const body = blob.subarray(HEADER_LEN);
   const encChunk = chunkSize + TAG;
   const nChunks = Math.max(1, Math.ceil(body.length / encChunk));
@@ -220,6 +242,11 @@ export async function decryptToSink(blob, ck, realSize, sink, onProgress) {
     wipe(pt); // drop this chunk's plaintext from the heap
     if (onProgress) onProgress((i + 1) / nChunks);
   }
+}
+
+// Single-part convenience wrapper (part 0), keeping the pre-multipart signature.
+export async function decryptToSink(blob, ck, realSize, sink, onProgress) {
+  return decryptPartToSink(blob, ck, 0, realSize, sink, onProgress);
 }
 
 export async function decryptBytes(blob, ck, realSize) {

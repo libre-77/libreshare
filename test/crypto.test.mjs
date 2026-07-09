@@ -1,5 +1,8 @@
 // Run: node test/crypto.test.mjs
-import { encryptBytes, decryptBytes, decryptToSink, readMeta, randomBytes, paddedLength, wipe } from '../js/crypto.js';
+import {
+  encryptBytes, encryptPart, decryptBytes, decryptToSink, decryptPartToSink,
+  readMeta, randomBytes, paddedLength, wipe, newContentKey,
+} from '../js/crypto.js';
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -117,6 +120,48 @@ function eq(a, b) {
   const joined = new Uint8Array(n); let o = 0;
   for (const p of parts) { joined.set(p, o); o += p.length; }
   ok('async sink receives intact plaintext', eq(joined, plain));
+}
+
+// 10. multipart: split plaintext into parts (own subkeys), decrypt in order.
+{
+  const ck = newContentKey();
+  const total = randomBytes(700 * 1024);
+  const PART = 256 * 1024;
+  const n = Math.ceil(total.length / PART);
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const slice = total.subarray(i * PART, Math.min((i + 1) * PART, total.length));
+    parts.push(await encryptPart(slice, ck, i));
+  }
+  ok('split into >1 part', n > 1);
+
+  // reassemble by decrypting each part under its index
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    await decryptPartToSink(parts[i].blob, ck, i, parts[i].realSize, (p) => out.push(p.slice()));
+  }
+  let len = 0; for (const p of out) len += p.length;
+  const joined = new Uint8Array(len); let o = 0;
+  for (const p of out) { joined.set(p, o); o += p.length; }
+  ok('multipart round trip equals original', eq(joined, total));
+}
+
+// 11. distinct subkeys: identical plaintext in two parts -> different ciphertext
+//     (proves no (key,nonce) reuse across parts).
+{
+  const ck = newContentKey();
+  const same = randomBytes(200 * 1024);
+  const a = await encryptPart(same, ck, 0);
+  const b = await encryptPart(same, ck, 1);
+  ok('same plaintext, different part -> different blob', !eq(a.blob, b.blob));
+}
+
+// 12. wrong part index fails auth (a part decrypted under the wrong subkey).
+{
+  const ck = newContentKey();
+  const p1 = await encryptPart(randomBytes(50 * 1024), ck, 1);
+  await throws('part decrypted under wrong index rejected', () =>
+    decryptPartToSink(p1.blob, ck, 2, p1.realSize, () => {}));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

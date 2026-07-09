@@ -1,7 +1,7 @@
 // Run: node test/descriptor.test.mjs
 // Binary descriptor: round trip, length win, edge sizes, and legacy v1 compat.
 import {
-  buildDescriptor, encodeFragment, decodeFragment, buildLink, b64urlEncode,
+  buildDescriptor, buildMultipartDescriptor, encodeFragment, decodeFragment, buildLink, b64urlEncode,
 } from '../js/descriptor.js';
 
 let pass = 0, fail = 0;
@@ -71,6 +71,32 @@ const servers = ['https://blossom.band', 'https://blossom.nostr.build'];
   let threw = false;
   try { decodeFragment(junk); } catch { threw = true; }
   ok('unknown version rejected', threw);
+}
+
+// 7. multipart (v3): ordered part list + per-part sizes survive round trip
+{
+  const parts = [
+    { hash: 'a'.repeat(64), realSize: 8 * 1024 * 1024 },
+    { hash: 'b'.repeat(64), realSize: 8 * 1024 * 1024 },
+    { hash: 'c'.repeat(64), realSize: 1234 },
+  ];
+  const d = buildMultipartDescriptor({ ck, parts, servers, realSize: 16 * 1024 * 1024 + 1234, meta });
+  const p = decodeFragment(encodeFragment(d));
+  ok('v3 version', p.v === 3);
+  ok('v3 ck preserved', eq(p.ck, ck));
+  ok('v3 part count', p.parts.length === 3);
+  ok('v3 part order + hashes', p.parts.map((x) => x.hash).join(',') === parts.map((x) => x.hash).join(','));
+  ok('v3 per-part sizes', p.parts[2].realSize === 1234);
+  ok('v3 total realSize', p.realSize === 16 * 1024 * 1024 + 1234);
+  ok('v3 servers + meta', p.servers.length === 2 && eq(p.meta, meta));
+}
+
+// 8. multipart with meta and servers omitted (shortest multipart link)
+{
+  const parts = [{ hash: 'd'.repeat(64), realSize: 100 }, { hash: 'e'.repeat(64), realSize: 50 }];
+  const d = buildMultipartDescriptor({ ck, parts, servers: [], realSize: 150, meta: new Uint8Array(0) });
+  const p = decodeFragment(encodeFragment(d));
+  ok('v3 empty servers + meta round trips', p.servers.length === 0 && p.meta.length === 0 && p.parts.length === 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

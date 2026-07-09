@@ -15,6 +15,11 @@ including Nostr gift-wrap delivery.
   tamper are all caught by authentication. Size padding hides the exact length.
 - **Blossom storage** — content-addressed by sha256, mirrors to several servers.
   Downloads verify the hash, so a server serving wrong bytes is rejected.
+- **Multipart split** — a file over the "max part" size is split into several
+  blobs, each uploaded separately, so no single blob trips a server's size cap
+  (the usual `413`). Each part encrypts under its own CK subkey (HKDF per index)
+  so the reset STREAM counter never reuses a nonce; the link (descriptor v3)
+  carries the ordered part hashes, and download streams the parts back in order.
 - **Unlinkable uploads** — each `PUT /upload` carries a BUD-02 `kind:24242` event
   signed by a fresh key that is zeroized right after. A server sees a different
   pubkey per file and cannot tie two uploads together. The trade is that BUD-02

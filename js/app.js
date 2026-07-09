@@ -1,6 +1,9 @@
-import { encryptBytes, decryptToSink, readMeta, wipe } from './crypto.js';
+import {
+  encryptBytes, encryptPart, encryptMetaField, newContentKey,
+  decryptToSink, decryptPartToSink, readMeta, wipe,
+} from './crypto.js';
 import { upload, download, DEFAULT_SERVERS } from './blossom.js';
-import { buildDescriptor, buildLink, decodeFragment } from './descriptor.js';
+import { buildDescriptor, buildMultipartDescriptor, buildLink, decodeFragment } from './descriptor.js';
 import { wrapLink, publishWrap, fetchWraps, generateIdentity } from './nostr-share.js';
 import { initI18n, setLang, getLang, t, humanSize } from './i18n.js';
 
@@ -37,6 +40,12 @@ $('upload-form').addEventListener('submit', async (e) => {
   const servers = $('servers').value.split(',').map((s) => s.trim()).filter(Boolean);
   if (servers.length === 0) return;
 
+  // Max bytes per uploaded blob. A file above this is split into parts, each its
+  // own blob, so a single blob never exceeds a server's size cap. Padding can
+  // add up to ~12.5%, so the effective ceiling is a bit below this value.
+  const maxPartMB = parseFloat($('max-part').value) || 8;
+  const maxPartBytes = Math.max(64 * 1024, Math.floor(maxPartMB * 1024 * 1024));
+
   $('go').disabled = true;
   show('up-result', false);
   show('up-progress', true);
@@ -46,41 +55,69 @@ $('upload-form').addEventListener('submit', async (e) => {
     prog.textContent = t('status.reading');
     setBar('up-bar', 0);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const name = file.name;
+    const mime = file.type || 'application/octet-stream';
 
-    // Encryption fills the first half of the bar, upload the second half.
-    prog.textContent = t('status.encrypting');
-    const { blob, blobHash, ck, realSize, meta } =
-      await encryptBytes(bytes, file.name, file.type || 'application/octet-stream',
-        (p) => {
-          prog.textContent = t('status.encryptingPct', { pct: Math.round(p * 100) });
-          setBar('up-bar', p * 50);
-        });
-
-    prog.textContent = t('status.uploading');
-    const accepted = await upload(servers, blob, blobHash, undefined, (p) => {
-      setBar('up-bar', 50 + p * 50);
-      // p reaches 1 when every byte is sent, but upload() only resolves once the
-      // servers respond (write + hash + round trip) — so show a distinct state
-      // instead of a bar that sits at 100% looking stuck.
-      prog.textContent = p >= 1 ? t('status.confirming') : t('status.uploadingPct', { pct: Math.round(p * 100) });
-    });
-    setBar('up-bar', 100);
-
-    // With "embed servers" off (default), the link omits its server list to
-    // stay short and is resolved against DEFAULT_SERVERS on download — so it
-    // only opens on apps that share those defaults. On = self-contained link
-    // carrying its own mirrors, longer but portable to any instance.
+    // Toggles: whether the link carries its own server list / filename.
     const embed = $('embed-servers').checked;
-    // Filename/mime (meta) is optional too: omit it for a shorter link and the
-    // recipient just sees a generic name. It is already encrypted either way —
-    // no server ever sees it; this only controls what the link itself carries.
     const embedMeta = $('embed-meta').checked;
-    const descriptor = buildDescriptor({
-      hash: blobHash, ck, servers: embed ? accepted : [], realSize,
-      meta: embedMeta ? meta : new Uint8Array(0),
-    });
+
+    let descriptor;
+    let ck; let meta; let storedCount;
+    if (bytes.length <= maxPartBytes) {
+      // Single blob (part 0) — encrypt fills the first half of the bar, upload
+      // the second.
+      prog.textContent = t('status.encrypting');
+      const enc = await encryptBytes(bytes, name, mime, (p) => {
+        prog.textContent = t('status.encryptingPct', { pct: Math.round(p * 100) });
+        setBar('up-bar', p * 50);
+      });
+      ck = enc.ck; meta = enc.meta;
+      prog.textContent = t('status.uploading');
+      const accepted = await upload(servers, enc.blob, enc.blobHash, undefined, (p) => {
+        setBar('up-bar', 50 + p * 50);
+        prog.textContent = p >= 1 ? t('status.confirming') : t('status.uploadingPct', { pct: Math.round(p * 100) });
+      });
+      storedCount = accepted.length;
+      descriptor = buildDescriptor({
+        hash: enc.blobHash, ck, servers: embed ? accepted : [], realSize: enc.realSize,
+        meta: embedMeta ? meta : new Uint8Array(0),
+      });
+    } else {
+      // Multipart: split the plaintext, encrypt+upload each part in turn (each
+      // under its own subkey), and record the ordered part hashes. A server is
+      // kept only if it accepted every part, so any listed server has the whole
+      // file.
+      ck = newContentKey();
+      const n = Math.ceil(bytes.length / maxPartBytes);
+      const parts = [];
+      let acceptedAll = null;
+      for (let i = 0; i < n; i++) {
+        const slice = bytes.subarray(i * maxPartBytes, Math.min((i + 1) * maxPartBytes, bytes.length));
+        prog.textContent = t('status.encryptingPart', { i: i + 1, n });
+        const pt = await encryptPart(slice, ck, i, (p) => setBar('up-bar', ((i + p * 0.5) / n) * 100));
+        prog.textContent = t('status.uploadingPart', { i: i + 1, n });
+        const acc = await upload(servers, pt.blob, pt.blobHash, undefined,
+          (p) => setBar('up-bar', ((i + 0.5 + p * 0.5) / n) * 100));
+        acceptedAll = acceptedAll ? acceptedAll.filter((s) => acc.includes(s)) : acc;
+        parts.push({ hash: pt.blobHash, realSize: pt.realSize });
+        wipe(pt.blob);
+      }
+      if (!acceptedAll || acceptedAll.length === 0) throw new Error(t('error.partServers'));
+      meta = await encryptMetaField(ck, name, mime);
+      storedCount = acceptedAll.length;
+      descriptor = buildMultipartDescriptor({
+        ck, parts, servers: embed ? acceptedAll : [], realSize: bytes.length,
+        meta: embedMeta ? meta : new Uint8Array(0),
+      });
+      prog.textContent = t('status.storedParts', { parts: n, count: storedCount });
+    }
+
+    setBar('up-bar', 100);
     $('link').value = buildLink(location.origin, descriptor);
-    prog.textContent = t('status.stored', { count: accepted.length, size: humanSize(blob.length) });
+    if (bytes.length <= maxPartBytes) {
+      prog.textContent = t('status.stored', { count: storedCount, size: humanSize(bytes.length) });
+    }
     setBar('up-bar', 100, false);
     show('up-result', true);
 
@@ -134,7 +171,7 @@ function renderDownloadMeta() {
   $('d-name').textContent = meta.name || t('download.unnamed');
   $('d-mime').textContent = meta.mime || 'application/octet-stream';
   $('d-size').textContent = humanSize(d.realSize);
-  $('d-hash').textContent = d.hash;
+  $('d-hash').textContent = d.v === 3 ? t('download.parts', { n: d.parts.length }) : d.hash;
 }
 
 $('download-btn').addEventListener('click', async () => {
@@ -146,11 +183,8 @@ $('download-btn').addEventListener('click', async () => {
   const prog = $('dl-progress');
 
   try {
-    prog.textContent = t('status.downloading');
-    setBar('dl-bar', null); // indeterminate: GET progress isn't tracked
     // A link may omit its servers (short mode); fall back to the app defaults.
     const servers = d.servers.length ? d.servers : DEFAULT_SERVERS;
-    const blob = await download(servers, d.hash);
 
     // Prefer streaming straight to disk; fall back to an in-memory Blob.
     let sink, finish;
@@ -171,12 +205,28 @@ $('download-btn').addEventListener('click', async () => {
       };
     }
 
-    prog.textContent = t('status.decrypting');
-    await decryptToSink(blob, d.ck, d.realSize, sink,
-      (p) => {
-        prog.textContent = t('status.decryptingPct', { pct: Math.round(p * 100) });
-        setBar('dl-bar', p * 100);
-      });
+    if (d.v === 3) {
+      // Multipart: fetch each part in order, decrypt it under its own subkey,
+      // and stream straight into the same sink so nothing is buffered whole.
+      const n = d.parts.length;
+      for (let i = 0; i < n; i++) {
+        prog.textContent = t('status.downloadingPart', { i: i + 1, n });
+        setBar('dl-bar', (i / n) * 100);
+        const blob = await download(servers, d.parts[i].hash);
+        await decryptPartToSink(blob, d.ck, i, d.parts[i].realSize, sink,
+          (p) => setBar('dl-bar', ((i + p) / n) * 100));
+      }
+    } else {
+      prog.textContent = t('status.downloading');
+      setBar('dl-bar', null); // indeterminate: GET progress isn't tracked
+      const blob = await download(servers, d.hash);
+      prog.textContent = t('status.decrypting');
+      await decryptToSink(blob, d.ck, d.realSize, sink,
+        (p) => {
+          prog.textContent = t('status.decryptingPct', { pct: Math.round(p * 100) });
+          setBar('dl-bar', p * 100);
+        });
+    }
     await finish();
     prog.textContent = t('status.saved');
     setBar('dl-bar', 100, false);

@@ -30,7 +30,8 @@ export function b64urlDecode(str) {
   return out;
 }
 
-const VERSION = 2;
+const VERSION = 2;          // single-blob binary descriptor
+const VERSION_MULTIPART = 3; // multipart: the file is split across several blobs
 const JSON_FIRST_BYTE = 0x7b; // '{' — a legacy v1 (JSON) fragment
 
 // Unsigned LEB128. Arithmetic (not bit ops) so realSize past 2^31 stays exact.
@@ -69,16 +70,15 @@ export function buildDescriptor({ hash, ck, servers, realSize, meta }) {
   return { v: VERSION, hash, ck, servers, realSize, meta };
 }
 
-export function encodeFragment(descriptor) {
-  const { hash, ck, servers, realSize, meta } = descriptor;
-  if (ck.length !== 32) throw new Error('ck must be 32 bytes');
+// Multipart: the file is split into parts, each its own content-addressed blob.
+// parts = [{ hash (hex), realSize }] in order. ck is shared; each part decrypts
+// under a distinct subkey (see crypto.contentKey).
+export function buildMultipartDescriptor({ ck, parts, servers, realSize, meta }) {
+  return { v: VERSION_MULTIPART, ck, parts, servers, realSize, meta };
+}
+
+function pushServers(out, servers) {
   const enc = new TextEncoder();
-  const out = [VERSION];
-  for (const b of hexToBytes(hash)) out.push(b);
-  for (const b of ck) out.push(b);
-  pushVarint(out, realSize);
-  pushVarint(out, meta.length);
-  for (const b of meta) out.push(b);
   if (servers.length > 255) throw new Error('too many servers');
   out.push(servers.length);
   for (const s of servers) {
@@ -86,7 +86,49 @@ export function encodeFragment(descriptor) {
     pushVarint(out, sb.length);
     for (const b of sb) out.push(b);
   }
+}
+
+export function encodeFragment(descriptor) {
+  if (descriptor.v === VERSION_MULTIPART) return encodeMultipart(descriptor);
+  const { hash, ck, servers, realSize, meta } = descriptor;
+  if (ck.length !== 32) throw new Error('ck must be 32 bytes');
+  const out = [VERSION];
+  for (const b of hexToBytes(hash)) out.push(b);
+  for (const b of ck) out.push(b);
+  pushVarint(out, realSize);
+  pushVarint(out, meta.length);
+  for (const b of meta) out.push(b);
+  pushServers(out, servers);
   return b64urlEncode(Uint8Array.from(out));
+}
+
+function encodeMultipart({ ck, parts, servers, realSize, meta }) {
+  if (ck.length !== 32) throw new Error('ck must be 32 bytes');
+  if (parts.length > 65535) throw new Error('too many parts');
+  const out = [VERSION_MULTIPART];
+  for (const b of ck) out.push(b);
+  pushVarint(out, realSize);
+  pushVarint(out, meta.length);
+  for (const b of meta) out.push(b);
+  pushVarint(out, parts.length);
+  for (const p of parts) {
+    for (const b of hexToBytes(p.hash)) out.push(b);
+    pushVarint(out, p.realSize);
+  }
+  pushServers(out, servers);
+  return b64urlEncode(Uint8Array.from(out));
+}
+
+function readServers(bytes, pos) {
+  const count = bytes[pos.i++];
+  const dec = new TextDecoder();
+  const servers = [];
+  for (let k = 0; k < count; k++) {
+    const len = readVarint(bytes, pos);
+    servers.push(dec.decode(bytes.subarray(pos.i, pos.i + len)));
+    pos.i += len;
+  }
+  return servers;
 }
 
 function decodeBinary(bytes) {
@@ -98,15 +140,28 @@ function decodeBinary(bytes) {
   const metaLen = readVarint(bytes, pos);
   const meta = bytes.slice(pos.i, pos.i + metaLen); pos.i += metaLen;
   if (meta.length !== metaLen) throw new Error('truncated descriptor');
-  const count = bytes[pos.i++];
-  const dec = new TextDecoder();
-  const servers = [];
-  for (let k = 0; k < count; k++) {
-    const len = readVarint(bytes, pos);
-    servers.push(dec.decode(bytes.subarray(pos.i, pos.i + len)));
-    pos.i += len;
-  }
+  const servers = readServers(bytes, pos);
   return { v: VERSION, hash, ck, servers, realSize, meta };
+}
+
+function decodeMultipart(bytes) {
+  const pos = { i: 1 };
+  const ck = bytes.slice(pos.i, pos.i + 32); pos.i += 32;
+  if (ck.length !== 32) throw new Error('truncated descriptor');
+  const realSize = readVarint(bytes, pos);
+  const metaLen = readVarint(bytes, pos);
+  const meta = bytes.slice(pos.i, pos.i + metaLen); pos.i += metaLen;
+  if (meta.length !== metaLen) throw new Error('truncated descriptor');
+  const partCount = readVarint(bytes, pos);
+  const parts = [];
+  for (let k = 0; k < partCount; k++) {
+    const hash = bytesToHex(bytes.subarray(pos.i, pos.i + 32)); pos.i += 32;
+    if (hash.length !== 64) throw new Error('truncated descriptor');
+    const partSize = readVarint(bytes, pos);
+    parts.push({ hash, realSize: partSize });
+  }
+  const servers = readServers(bytes, pos);
+  return { v: VERSION_MULTIPART, ck, parts, servers, realSize, meta };
 }
 
 // Legacy v1: base64url(JSON). Kept so links shared before the binary format
@@ -129,6 +184,7 @@ export function decodeFragment(fragment) {
   const bytes = b64urlDecode(fragment);
   if (bytes[0] === JSON_FIRST_BYTE) return decodeJsonV1(fragment);
   if (bytes[0] === VERSION) return decodeBinary(bytes);
+  if (bytes[0] === VERSION_MULTIPART) return decodeMultipart(bytes);
   throw new Error('unsupported descriptor version');
 }
 

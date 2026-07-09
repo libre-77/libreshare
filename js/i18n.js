@@ -26,6 +26,8 @@ export const STRINGS = {
     'upload.embedServersHint': 'off (default): shorter link, but it only opens on apps using the same default servers. on: longer, self-contained link that opens anywhere.',
     'upload.embedMeta': 'put filename &amp; type in the link',
     'upload.embedMetaHint': 'on (default): the recipient sees the original filename. off: shorter link, the recipient just gets a generic name. Either way no server ever sees it.',
+    'upload.maxPart': 'max part (MB)',
+    'upload.maxPartHint': 'a file larger than this is split into parts, each its own blob, so no single upload trips a server size limit.',
     'upload.submit': 'encrypt &amp; upload',
 
     'result.linkNote': 'Share this link. The key lives after the <code>#</code> and is never sent to any server.',
@@ -61,6 +63,7 @@ export const STRINGS = {
     'download.blob': 'blob',
     'download.submit': 'decrypt &amp; save',
     'download.unnamed': '(unnamed)',
+    'download.parts': '{n} parts',
 
     'about.p1': 'miraclefile encrypts every file client-side with a per-file key (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which browsers never transmit, so storage servers hold only opaque ciphertext.',
     'about.p2': 'Share the link privately over Nostr: it is sealed into a NIP-59 gift wrap addressed to one recipient, so the relay sees only an encrypted blob from a throwaway key — not the link, not who sent it. The recipient opens their <a href="#" id="about-inbox">inbox</a> and unwraps it locally.',
@@ -74,6 +77,10 @@ export const STRINGS = {
     'status.uploading': 'uploading…',
     'status.uploadingPct': 'uploading… {pct}%',
     'status.confirming': 'bytes sent — waiting for the server(s) to confirm…',
+    'status.encryptingPart': 'encrypting part {i}/{n}…',
+    'status.uploadingPart': 'uploading part {i}/{n}…',
+    'status.downloadingPart': 'downloading part {i}/{n}…',
+    'status.storedParts': 'stored {parts} parts on {count} server(s)',
     'status.stored': 'stored on {count} server(s), {size} ciphertext',
     'status.downloading': 'downloading…',
     'status.decrypting': 'decrypting…',
@@ -89,6 +96,7 @@ export const STRINGS = {
     'error.needRelay': 'at least one relay required',
     'error.sendFailed': 'send failed: {msg}',
     'error.needNsec': 'your nsec required',
+    'error.partServers': 'no server accepted every part',
     'error.inboxFailed': 'inbox failed: {msg}',
     'error.noFragment': 'link has no key fragment',
 
@@ -114,6 +122,8 @@ export const STRINGS = {
     'upload.embedServersHint': '끄면(기본): 링크가 짧아지지만 같은 기본 서버를 쓰는 앱에서만 열립니다. 켜면: 길지만 어디서나 열리는 자체완결 링크.',
     'upload.embedMeta': '링크에 파일명·형식 포함',
     'upload.embedMetaHint': '켜면(기본): 받는 사람이 원본 파일명을 봅니다. 끄면: 링크가 짧아지고 받는 사람은 일반 이름만 받습니다. 어느 쪽이든 서버는 못 봅니다.',
+    'upload.maxPart': '파트 최대 (MB)',
+    'upload.maxPartHint': '이보다 큰 파일은 파트로 쪼개져 각각 별도 blob으로 올라가므로, 한 번의 업로드가 서버 크기 상한을 넘지 않습니다.',
     'upload.submit': '암호화 후 업로드',
 
     'result.linkNote': '이 링크를 공유하세요. 키는 <code>#</code> 뒤에 있으며 어떤 서버로도 전송되지 않습니다.',
@@ -149,6 +159,7 @@ export const STRINGS = {
     'download.blob': '블롭',
     'download.submit': '복호화 후 저장',
     'download.unnamed': '(이름 없음)',
+    'download.parts': '파트 {n}개',
 
     'about.p1': 'miraclefile은 모든 파일을 파일마다 다른 키(AES-256-GCM, STREAM 프레이밍)로 클라이언트에서 암호화합니다. 키는 브라우저가 절대 전송하지 않는 URL 프래그먼트에 담기므로, 저장 서버는 해독 불가능한 암호문만 갖게 됩니다.',
     'about.p2': 'Nostr로 링크를 비공개 전달하세요. 링크는 수신자 한 명에게 향하는 NIP-59 기프트랩으로 봉인되므로, 릴레이는 일회용 키가 보낸 암호화된 덩어리만 볼 뿐 링크도 발신자도 알 수 없습니다. 받는 사람은 <a href="#" id="about-inbox">수신함</a>을 열어 로컬에서 해제합니다.',
@@ -162,6 +173,10 @@ export const STRINGS = {
     'status.uploading': '업로드 중…',
     'status.uploadingPct': '업로드 중… {pct}%',
     'status.confirming': '전송 완료 — 서버 확인 대기 중…',
+    'status.encryptingPart': '파트 암호화 중 {i}/{n}…',
+    'status.uploadingPart': '파트 업로드 중 {i}/{n}…',
+    'status.downloadingPart': '파트 다운로드 중 {i}/{n}…',
+    'status.storedParts': '파트 {parts}개를 서버 {count}곳에 저장',
     'status.stored': '서버 {count}곳에 저장됨, 암호문 {size}',
     'status.downloading': '다운로드 중…',
     'status.decrypting': '복호화 중…',
@@ -177,6 +192,7 @@ export const STRINGS = {
     'error.needRelay': '릴레이가 최소 하나 필요합니다',
     'error.sendFailed': '전송 실패: {msg}',
     'error.needNsec': '내 nsec이 필요합니다',
+    'error.partServers': '모든 파트를 받은 서버가 없습니다',
     'error.inboxFailed': '수신함 조회 실패: {msg}',
     'error.noFragment': '링크에 키 프래그먼트가 없습니다',
 
