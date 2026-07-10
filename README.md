@@ -137,3 +137,10 @@ residue reduction only: JS strings (the link, an nsec) are immutable and cannot
 be wiped, the GC may have already copied a buffer, and the OS may page memory to
 disk. The device-seizure defense the threat model asks for (duress vaults,
 `docs/ARCHITECTURE.md` §4) is still unbuilt.
+
+## License
+
+[GNU AGPL-3.0-or-later](LICENSE). Because the app is delivered over a network,
+the AGPL's §13 requires that anyone running a modified version offer its users
+the corresponding source. The vendored `vendor/nostr-tools.js` bundle keeps its
+own MIT license.

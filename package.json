@@ -9,5 +9,5 @@
     "web": "node server/static.js",
     "test": "node test/crypto.test.mjs && node test/descriptor.test.mjs && node test/nostr.test.mjs && node test/i18n.test.mjs"
   },
-  "license": "MIT"
+  "license": "AGPL-3.0-or-later"
 }
