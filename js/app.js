@@ -162,7 +162,7 @@ async function renderDownload(frag) {
   try {
     const d = decodeFragment(frag);
     // A link may omit meta (shorter mode); fall back to a generic name/type.
-    const meta = d.meta.length ? await readMeta(d.ck, d.meta) : { name: null, mime: null };
+    const meta = d.meta.length ? await readMeta(d.ck, d.meta, d.v) : { name: null, mime: null };
     current = { d, meta };
     renderDownloadMeta();
     $('download-btn').disabled = false;
@@ -182,7 +182,7 @@ function renderDownloadMeta() {
   $('d-name').textContent = meta.name || t('download.unnamed');
   $('d-mime').textContent = meta.mime || 'application/octet-stream';
   $('d-size').textContent = humanSize(d.realSize);
-  $('d-hash').textContent = d.v === 3 ? t('download.parts', { n: d.parts.length }) : d.hash;
+  $('d-hash').textContent = (d.v === 3 || d.v === 5) ? t('download.parts', { n: d.parts.length }) : d.hash;
 }
 
 $('download-btn').addEventListener('click', async () => {
@@ -216,7 +216,7 @@ $('download-btn').addEventListener('click', async () => {
       };
     }
 
-    if (d.v === 3) {
+    if (d.v === 3 || d.v === 5) {
       // Multipart: fetch each part in order, decrypt it under its own subkey,
       // and stream straight into the same sink so nothing is buffered whole.
       const n = d.parts.length;

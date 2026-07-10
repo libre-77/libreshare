@@ -1,7 +1,8 @@
 // Run: node test/descriptor.test.mjs
 // Binary descriptor: round trip, length win, edge sizes, and legacy v1 compat.
 import {
-  buildDescriptor, buildMultipartDescriptor, encodeFragment, decodeFragment, buildLink, b64urlEncode,
+  buildDescriptor, buildMultipartDescriptor, encodeFragment, decodeFragment, buildLink,
+  b64urlEncode, b64urlDecode,
 } from '../js/descriptor.js';
 
 let pass = 0, fail = 0;
@@ -23,7 +24,7 @@ const servers = ['https://blossom.band', 'https://blossom.nostr.build'];
   ok('meta preserved', eq(p.meta, meta));
   ok('servers preserved', p.servers.length === 2 && p.servers[0] === servers[0] && p.servers[1] === servers[1]);
   ok('realSize preserved', p.realSize === 30);
-  ok('version is 2', p.v === 2);
+  ok('version is 4 (current: libsodium content/meta)', p.v === 4);
 }
 
 // 2. it is actually shorter than the old JSON form
@@ -82,7 +83,7 @@ const servers = ['https://blossom.band', 'https://blossom.nostr.build'];
   ];
   const d = buildMultipartDescriptor({ ck, parts, servers, realSize: 16 * 1024 * 1024 + 1234, meta });
   const p = decodeFragment(encodeFragment(d));
-  ok('v3 version', p.v === 3);
+  ok('v5 version (current multipart: libsodium content/meta)', p.v === 5);
   ok('v3 ck preserved', eq(p.ck, ck));
   ok('v3 part count', p.parts.length === 3);
   ok('v3 part order + hashes', p.parts.map((x) => x.hash).join(',') === parts.map((x) => x.hash).join(','));
@@ -97,6 +98,20 @@ const servers = ['https://blossom.band', 'https://blossom.nostr.build'];
   const d = buildMultipartDescriptor({ ck, parts, servers: [], realSize: 150, meta: new Uint8Array(0) });
   const p = decodeFragment(encodeFragment(d));
   ok('v3 empty servers + meta round trips', p.servers.length === 0 && p.meta.length === 0 && p.parts.length === 2);
+}
+
+// 9. legacy raw v2 (pre-libsodium, AES-GCM content/meta) descriptor still
+//    decodes at the layout level — a link shared before this change must keep
+//    resolving. v2 and v4 share byte layout exactly (see descriptor.js), so
+//    building a v4 fragment and flipping just the leading version byte to 2
+//    produces exactly what a pre-libsodium upload would have emitted.
+{
+  const d = buildDescriptor({ hash, ck, servers, realSize: 30, meta });
+  const frag = encodeFragment(d);
+  const bytes = b64urlDecode(frag);
+  bytes[0] = 2; // VERSION (legacy) in place of VERSION_SODIUM (4)
+  const p = decodeFragment(b64urlEncode(bytes));
+  ok('legacy v2 (raw bytes) still decodes', p.v === 2 && p.hash === hash && eq(p.ck, ck) && eq(p.meta, meta));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

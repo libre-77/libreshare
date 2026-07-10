@@ -1,17 +1,26 @@
 // Client-side file encryption. Servers never see plaintext or keys.
 //
-// Construction: AES-256-GCM in a STREAM (Hoang-Reyhanitabar-Rogaway) framing.
-// Web Crypto has no XChaCha20-Poly1305; AES-256-GCM is the native AEAD and was
-// Firefox Send's actual choice. Per-file random content key (CK) means the
-// deterministic counter nonce never repeats across files.
+// Construction (current, header version 2): XChaCha20-Poly1305 via libsodium's
+// crypto_secretstream_xchacha20poly1305 — the audited STREAM (Hoang-Reyhanitabar-
+// Rogaway) implementation, so chunk framing, the truncation-detecting final tag,
+// and the extended 192-bit nonce are all handled by the library instead of
+// hand-rolled here. Per-part subkeys come from crypto_kdf_derive_from_key
+// (BLAKE2b-based KDF built for exactly this: deriving subkey N from a master
+// key) instead of a hand-rolled HKDF construction. See vendor/libsodium.js.
 //
-// Nonce (12 bytes): [0..6]=0, [7..10]=big-endian chunk counter, [11]=final flag.
-// The final flag gives truncation protection: the last chunk is sealed with
-// flag=1, every other with flag=0. Dropping or appending a chunk flips a flag
-// the decryptor expects and GCM authentication fails.
+// Header version 1 (legacy) is kept read-only so files shared before this
+// change keep decrypting: AES-256-GCM (the native Web Crypto AEAD; Web Crypto
+// has no XChaCha20-Poly1305) in the same hand-rolled STREAM framing this file
+// used before — a counter+final-flag nonce, verified in the "legacy" functions
+// below. New uploads never produce a version-1 blob.
+
+import sodium from '../vendor/libsodium.js';
+
+await sodium.ready;
 
 const MAGIC = new Uint8Array([0x4d, 0x46, 0x49, 0x4c]); // "MFIL"
-const VERSION = 1;
+const LEGACY_VERSION = 1; // AES-256-GCM, hand-rolled STREAM framing (read-only)
+const VERSION = 2;        // XChaCha20-Poly1305 via libsodium secretstream (current)
 
 // A valid 1x1 transparent PNG. The encrypted blob rides AFTER its IEND so the
 // stored bytes begin with a real PNG signature. Public Blossom servers are
@@ -27,12 +36,19 @@ const PNG_STUB = Uint8Array.from(
 );
 const HEADER_LEN = 9; // MAGIC(4) | version(1) | chunkSize(4 BE)
 const CHUNK = 256 * 1024; // plaintext bytes per chunk
-const TAG = 16;
-const MAX_CHUNKS = 0xffffffff; // 32-bit counter ceiling
+const LEGACY_TAG = 16; // legacy AES-GCM tag bytes
+const MAX_CHUNKS = 0xffffffff; // 32-bit counter ceiling (legacy nonce; kept as a sanity bound for both)
 
 const KiB = 1024;
 const MIN_PAD = 64 * KiB;   // floor: tiny files all bucket here (cheap anonymity)
 const PAD_BITS = 3;         // keep this many significant bits -> overhead <= 2^-3
+
+// Subkey derivation contexts (crypto_kdf_derive_from_key requires exactly 8
+// bytes). Content parts use the part index as the subkey id; meta uses a fixed
+// id under its own context, so it can never collide with a content subkey even
+// at id 0.
+const KDF_CONTEXT_CONTENT = 'MFILv2ct';
+const KDF_CONTEXT_META = 'MFILv2mt';
 
 const subtle = globalThis.crypto.subtle;
 const utf8 = new TextEncoder();
@@ -69,7 +85,7 @@ export function paddedLength(len) {
   return Math.ceil(len / step) * step;
 }
 
-async function hkdf(ikm, info, length = 32) {
+async function hkdfLegacy(ikm, info, length = 32) {
   const key = await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
   const bits = await subtle.deriveBits(
     { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: utf8.encode(info) },
@@ -78,28 +94,37 @@ async function hkdf(ikm, info, length = 32) {
   return new Uint8Array(bits);
 }
 
-// Per-part content key. A multipart upload splits the plaintext into separate
-// blobs, and each blob re-uses the STREAM counter nonce from 0 — so every part
-// MUST encrypt under a distinct key or two parts would reuse an (key, nonce)
-// pair, which is fatal for AES-GCM. Part 0 keeps the original info string, so a
-// single-part file is byte-identical to the pre-multipart format (and old links
-// still decrypt); parts 1.. derive a fresh key from the same CK.
-async function contentKey(ck, part = 0) {
+// Legacy (header v1) per-part content key: HKDF-SHA256 via Web Crypto, then
+// imported as an AES-GCM key. Part 0 keeps the original info string so an old
+// single-part file is byte-identical to the pre-multipart format.
+async function contentKeyLegacy(ck, part = 0) {
   const info = part === 0 ? 'miraclefile/v1/content' : `miraclefile/v1/content/${part}`;
-  const raw = await hkdf(ck, info);
+  const raw = await hkdfLegacy(ck, info);
   return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function metaKeyLegacy(ck) {
+  const raw = await hkdfLegacy(ck, 'miraclefile/v1/meta');
+  return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+// Current (header v2) per-part content subkey: crypto_kdf_derive_from_key,
+// keyed on the part index. A multipart upload re-uses the secretstream framing
+// from a fresh state per part, so every part MUST derive under a distinct
+// subkey — this is what crypto_kdf's subkey-id parameter is for.
+function contentKeySodium(ck, part = 0) {
+  return sodium.crypto_kdf_derive_from_key(32, part, KDF_CONTEXT_CONTENT, ck);
+}
+
+function metaKeySodium(ck) {
+  return sodium.crypto_kdf_derive_from_key(32, 0, KDF_CONTEXT_META, ck);
 }
 
 export function newContentKey() {
   return randomBytes(32);
 }
 
-async function metaKeyOf(ck) {
-  const raw = await hkdf(ck, 'miraclefile/v1/meta');
-  return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
-
-function nonce(counter, final) {
+function legacyNonce(counter, final) {
   const n = new Uint8Array(12);
   new DataView(n.buffer).setUint32(7, counter, false);
   n[11] = final ? 1 : 0;
@@ -116,10 +141,10 @@ function stripPngStub(blob) {
   return blob;
 }
 
-function header() {
+function header(version) {
   const h = new Uint8Array(HEADER_LEN);
   h.set(MAGIC, 0);
-  h[4] = VERSION;
+  h[4] = version;
   new DataView(h.buffer).setUint32(5, CHUNK, false);
   return h;
 }
@@ -144,8 +169,10 @@ export async function sha256Hex(bytes) {
   return toHex(new Uint8Array(d));
 }
 
-async function encryptMeta(ck, obj) {
-  const key = await metaKeyOf(ck);
+// --- meta (name/mime) --------------------------------------------------------
+
+async function encryptMetaLegacy(ck, obj) {
+  const key = await metaKeyLegacy(ck);
   const iv = randomBytes(12);
   const ct = new Uint8Array(await subtle.encrypt(
     { name: 'AES-GCM', iv, tagLength: 128 }, key, utf8.encode(JSON.stringify(obj)),
@@ -153,25 +180,60 @@ async function encryptMeta(ck, obj) {
   return concat([iv, ct]);
 }
 
-async function decryptMeta(ck, blob) {
-  const key = await metaKeyOf(ck);
+async function decryptMetaLegacy(ck, blob) {
+  const key = await metaKeyLegacy(ck);
   const iv = blob.subarray(0, 12);
   const ct = blob.subarray(12);
   const pt = await subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, ct);
   return JSON.parse(utf8d.decode(pt));
 }
 
-// Encrypt one plaintext part into an uploadable blob under CK's `part` subkey.
-// Returns { blob, blobHash, realSize }. Single-blob uploads use part 0; a
-// multipart upload calls this once per slice with an increasing part index.
-export async function encryptPart(plain, ck, part, onProgress) {
-  const key = await contentKey(ck, part);
+function encryptMetaSodium(ck, obj) {
+  const key = metaKeySodium(ck);
+  const nonce = randomBytes(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const pt = utf8.encode(JSON.stringify(obj));
+  const ct = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(pt, null, null, nonce, key);
+  wipe(key);
+  return concat([nonce, ct]);
+}
+
+function decryptMetaSodium(ck, blob) {
+  const nonce = blob.subarray(0, sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const ct = blob.subarray(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  const key = metaKeySodium(ck);
+  let pt;
+  try {
+    pt = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, ct, null, nonce, key);
+  } finally {
+    wipe(key);
+  }
+  return JSON.parse(utf8d.decode(pt));
+}
+
+// Build the encrypted {name, mime} descriptor field (Uint8Array). Always
+// current-format (header v2 scheme) — new uploads never produce legacy meta.
+export function encryptMetaField(ck, name, mime) {
+  return encryptMetaSodium(ck, { name, mime });
+}
+
+// Decrypt a descriptor's meta field. `v` is the descriptor version (see
+// descriptor.js): 2/3 are legacy (AES-GCM) links minted before this change, 4/5
+// are current (libsodium) links. The descriptor version is read up front by
+// decodeFragment, so this dispatch is exact — not a guess from the bytes.
+export async function readMeta(ck, meta, v) {
+  return (v === 2 || v === 3) ? decryptMetaLegacy(ck, meta) : decryptMetaSodium(ck, meta);
+}
+
+// --- content (bulk plaintext) -------------------------------------------------
+
+async function encryptPartLegacy(plain, ck, part, onProgress) {
+  const key = await contentKeyLegacy(ck, part);
   const realSize = plain.length;
 
   const padded = new Uint8Array(paddedLength(realSize));
   padded.set(plain);
 
-  const aad = header();
+  const aad = header(LEGACY_VERSION);
   const nChunks = Math.max(1, Math.ceil(padded.length / CHUNK));
   if (nChunks > MAX_CHUNKS) throw new Error('part too large');
 
@@ -180,7 +242,7 @@ export async function encryptPart(plain, ck, part, onProgress) {
     const slice = padded.subarray(i * CHUNK, Math.min((i + 1) * CHUNK, padded.length));
     const final = i === nChunks - 1;
     const ct = await subtle.encrypt(
-      { name: 'AES-GCM', iv: nonce(i, final), additionalData: aad, tagLength: 128 },
+      { name: 'AES-GCM', iv: legacyNonce(i, final), additionalData: aad, tagLength: 128 },
       key, slice,
     );
     parts.push(new Uint8Array(ct));
@@ -193,35 +255,54 @@ export async function encryptPart(plain, ck, part, onProgress) {
   return { blob, blobHash, realSize };
 }
 
-// Build the encrypted {name, mime} descriptor field (Uint8Array).
-export function encryptMetaField(ck, name, mime) {
-  return encryptMeta(ck, { name, mime });
+// Kept only so tests (and any not-yet-downloaded old link) can exercise header
+// v1 decrypt. New uploads must never call this — use encryptPart.
+export async function encryptPartLegacyForTests(plain, ck, part, onProgress) {
+  return encryptPartLegacy(plain, ck, part, onProgress);
 }
 
-// Encrypt plaintext bytes into a single uploadable blob (part 0).
-// Returns { blob, blobHash, ck, realSize, meta }. Convenience wrapper over
-// encryptPart for the common single-part case; ck is a fresh 32-byte key.
-export async function encryptBytes(plain, name, mime, onProgress) {
-  const ck = newContentKey();
-  const { blob, blobHash, realSize } = await encryptPart(plain, ck, 0, onProgress);
-  const meta = await encryptMetaField(ck, name, mime);
-  return { blob, blobHash, ck, realSize, meta };
+async function encryptPartSodium(plain, ck, part, onProgress) {
+  const key = contentKeySodium(ck, part);
+  const realSize = plain.length;
+
+  const padded = new Uint8Array(paddedLength(realSize));
+  padded.set(plain);
+
+  const aad = header(VERSION);
+  const { state, header: ssHeader } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key);
+  const nChunks = Math.max(1, Math.ceil(padded.length / CHUNK));
+  if (nChunks > MAX_CHUNKS) throw new Error('part too large');
+
+  const parts = [PNG_STUB, aad, ssHeader];
+  for (let i = 0; i < nChunks; i++) {
+    const slice = padded.subarray(i * CHUNK, Math.min((i + 1) * CHUNK, padded.length));
+    const final = i === nChunks - 1;
+    const tag = final
+      ? sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
+      : sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE;
+    const ct = sodium.crypto_secretstream_xchacha20poly1305_push(state, slice, aad, tag);
+    parts.push(ct);
+    if (onProgress) onProgress((i + 1) / nChunks);
+  }
+
+  const blob = concat(parts);
+  const blobHash = await sha256Hex(blob);
+  wipe(padded); // the padded buffer held plaintext; scrub it
+  wipe(key);
+  return { blob, blobHash, realSize };
 }
 
-// Decrypt one part's blob under CK's `part` subkey, streaming plaintext to
-// sink(Uint8Array) chunk by chunk. Throws on any authentication failure (tamper,
-// truncation, wrong key). onProgress reports this part's own 0..1.
-export async function decryptPartToSink(blob, ck, part, realSize, sink, onProgress) {
-  blob = stripPngStub(blob);
-  if (blob.length < HEADER_LEN) throw new Error('blob too short');
-  const aad = blob.subarray(0, HEADER_LEN);
-  for (let i = 0; i < 4; i++) if (aad[i] !== MAGIC[i]) throw new Error('bad magic');
-  if (aad[4] !== VERSION) throw new Error('unsupported version');
-  const chunkSize = new DataView(aad.buffer, aad.byteOffset).getUint32(5, false);
+// Encrypt one plaintext part into an uploadable blob under CK's `part` subkey.
+// Returns { blob, blobHash, realSize }. Single-blob uploads use part 0; a
+// multipart upload calls this once per slice with an increasing part index.
+// Always produces the current (header v2, libsodium) format.
+export async function encryptPart(plain, ck, part, onProgress) {
+  return encryptPartSodium(plain, ck, part, onProgress);
+}
 
-  const key = await contentKey(ck, part);
-  const body = blob.subarray(HEADER_LEN);
-  const encChunk = chunkSize + TAG;
+async function decryptPartToSinkLegacy(body, aad, chunkSize, ck, part, realSize, sink, onProgress) {
+  const key = await contentKeyLegacy(ck, part);
+  const encChunk = chunkSize + LEGACY_TAG;
   const nChunks = Math.max(1, Math.ceil(body.length / encChunk));
 
   let written = 0;
@@ -229,19 +310,75 @@ export async function decryptPartToSink(blob, ck, part, realSize, sink, onProgre
     const slice = body.subarray(i * encChunk, Math.min((i + 1) * encChunk, body.length));
     const final = i === nChunks - 1;
     const ptBuf = await subtle.decrypt(
-      { name: 'AES-GCM', iv: nonce(i, final), additionalData: aad, tagLength: 128 },
+      { name: 'AES-GCM', iv: legacyNonce(i, final), additionalData: aad, tagLength: 128 },
       key, slice,
     );
     const pt = new Uint8Array(ptBuf);
     const remaining = realSize - written;
-    // Await the sink so the plaintext is fully consumed (written to disk or
-    // copied) before we scrub the buffer — otherwise a streamed write could
-    // still be reading it. `sink` may return a promise or undefined; both await.
     if (remaining > 0) await sink(pt.length <= remaining ? pt : pt.subarray(0, remaining));
     written += pt.length;
-    wipe(pt); // drop this chunk's plaintext from the heap
+    wipe(pt);
     if (onProgress) onProgress((i + 1) / nChunks);
   }
+}
+
+async function decryptPartToSinkSodium(body, aad, chunkSize, ck, part, realSize, sink, onProgress) {
+  const headerLen = sodium.crypto_secretstream_xchacha20poly1305_HEADERBYTES;
+  if (body.length < headerLen) throw new Error('blob too short');
+  const ssHeader = body.subarray(0, headerLen);
+  const rest = body.subarray(headerLen);
+
+  const key = contentKeySodium(ck, part);
+  let state;
+  try {
+    state = sodium.crypto_secretstream_xchacha20poly1305_init_pull(ssHeader, key);
+  } finally {
+    wipe(key);
+  }
+  const encChunk = chunkSize + sodium.crypto_secretstream_xchacha20poly1305_ABYTES;
+  const nChunks = Math.max(1, Math.ceil(rest.length / encChunk));
+
+  let written = 0;
+  for (let i = 0; i < nChunks; i++) {
+    const slice = rest.subarray(i * encChunk, Math.min((i + 1) * encChunk, rest.length));
+    const final = i === nChunks - 1;
+    // pull() authenticates the chunk AND its embedded tag byte together, so an
+    // attacker cannot forge TAG_FINAL on a dropped/truncated stream without
+    // breaking the MAC — this is the same truncation defense the legacy path
+    // built from a hand-rolled nonce flag, but native to the STREAM construction.
+    const { message, tag } = sodium.crypto_secretstream_xchacha20poly1305_pull(state, slice, aad);
+    if (final !== (tag === sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL)) {
+      throw new Error('stream truncated or extended');
+    }
+    const remaining = realSize - written;
+    if (remaining > 0) await sink(message.length <= remaining ? message : message.subarray(0, remaining));
+    written += message.length;
+    wipe(message);
+    if (onProgress) onProgress((i + 1) / nChunks);
+  }
+}
+
+// Decrypt one part's blob under CK's `part` subkey, streaming plaintext to
+// sink(Uint8Array) chunk by chunk. Throws on any authentication failure (tamper,
+// truncation, wrong key). onProgress reports this part's own 0..1. Dispatches
+// on the blob's own header version byte, so header-v1 (legacy AES-GCM) blobs
+// from before this change still decrypt.
+export async function decryptPartToSink(blob, ck, part, realSize, sink, onProgress) {
+  blob = stripPngStub(blob);
+  if (blob.length < HEADER_LEN) throw new Error('blob too short');
+  const aad = blob.subarray(0, HEADER_LEN);
+  for (let i = 0; i < 4; i++) if (aad[i] !== MAGIC[i]) throw new Error('bad magic');
+  const version = aad[4];
+  const chunkSize = new DataView(aad.buffer, aad.byteOffset).getUint32(5, false);
+  const body = blob.subarray(HEADER_LEN);
+
+  if (version === LEGACY_VERSION) {
+    return decryptPartToSinkLegacy(body, aad, chunkSize, ck, part, realSize, sink, onProgress);
+  }
+  if (version === VERSION) {
+    return decryptPartToSinkSodium(body, aad, chunkSize, ck, part, realSize, sink, onProgress);
+  }
+  throw new Error('unsupported version');
 }
 
 // Single-part convenience wrapper (part 0), keeping the pre-multipart signature.
@@ -255,6 +392,12 @@ export async function decryptBytes(blob, ck, realSize) {
   return concat(parts);
 }
 
-export async function readMeta(ck, meta) {
-  return decryptMeta(ck, meta);
+// Encrypt plaintext bytes into a single uploadable blob (part 0).
+// Returns { blob, blobHash, ck, realSize, meta }. Convenience wrapper over
+// encryptPart for the common single-part case; ck is a fresh 32-byte key.
+export async function encryptBytes(plain, name, mime, onProgress) {
+  const ck = newContentKey();
+  const { blob, blobHash, realSize } = await encryptPart(plain, ck, 0, onProgress);
+  const meta = await encryptMetaField(ck, name, mime);
+  return { blob, blobHash, ck, realSize, meta };
 }
