@@ -275,6 +275,13 @@ $('download-btn').addEventListener('click', async () => {
     prog.textContent = t('status.saved');
     setBar('dl-bar', 100, false);
   } catch (err) {
+    // User dismissed the save dialog — not an error, just reset quietly.
+    if (err && err.name === 'AbortError') {
+      prog.textContent = '';
+      setBar('dl-bar', null, false);
+      $('download-btn').disabled = false;
+      return;
+    }
     show('dl-error', true);
     $('dl-error').textContent = t('error.downloadFailed', { msg: err.message });
     prog.textContent = '';
@@ -421,8 +428,21 @@ function clearSensitive() {
 $('nav-new').addEventListener('click', (e) => { e.preventDefault(); showOnly('upload'); });
 $('nav-inbox').addEventListener('click', (e) => { e.preventDefault(); showOnly('inbox'); });
 $('nav-about').addEventListener('click', (e) => { e.preventDefault(); showOnly('about'); });
+// True when "clear" would actually throw away something the user can't get
+// back (a built link, an entered/generated key, a loaded inbox, an in-flight
+// upload). Used to skip the confirm prompt when the page is already empty.
+function hasClearableState() {
+  return uploading || hasResult
+    || !!$('link').value || !!$('my-nsec').value
+    || !!$('gen-id-out').textContent.trim()
+    || $('inbox-list').children.length > 0
+    || !!current || !!lastIdentity || !!lastItems;
+}
+
 $('nav-clear').addEventListener('click', (e) => {
   e.preventDefault();
+  // Confirm before wiping anything irreversible; skip the prompt if nothing's there.
+  if (hasClearableState() && !confirm(t('confirm.clear'))) return;
   clearSensitive();
   showOnly('upload');
   $('up-progress').textContent = t('status.cleared');

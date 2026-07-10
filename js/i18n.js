@@ -91,6 +91,7 @@ export const STRINGS = {
     'status.saved': 'done — saved.',
     'status.sent': 'sealed & sent via {count} relay(s)',
     'status.cleared': 'cleared — keys, link, and plaintext buffers wiped from this tab.',
+    'confirm.clear': 'Clear the link, keys and inbox from this page? This cannot be undone.',
 
     'error.generic': 'error: {msg}',
     'error.badLink': 'invalid or corrupt link: {msg}',
@@ -190,6 +191,7 @@ export const STRINGS = {
     'status.saved': '완료 — 저장됨.',
     'status.sent': '릴레이 {count}곳으로 봉인 전송됨',
     'status.cleared': '지워짐 — 이 탭의 키·링크·평문 버퍼를 소거했습니다.',
+    'confirm.clear': '이 페이지의 링크·키·수신함을 지울까요? 되돌릴 수 없습니다.',
 
     'error.generic': '오류: {msg}',
     'error.badLink': '잘못되었거나 손상된 링크: {msg}',
