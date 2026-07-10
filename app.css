@@ -111,6 +111,25 @@ button:disabled { border-color: var(--rule); color: var(--muted); background: va
 .bar::-moz-progress-bar { background: var(--accent); }
 /* No value attribute -> indeterminate: show a faint accent wash. */
 .bar:not([value]) { background: var(--rule); }
+/* Floating upload progress, pinned bottom-left; survives nav switches. */
+.up-float {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 240px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  background: var(--field);
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  z-index: 50;
+}
+.up-float[hidden] { display: none; }
+.up-float .bar { margin: 0 0 6px; }
+
 .result { margin-top: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
 .ok-note { color: var(--accent); font-size: 12px; margin-left: 8px; }
 

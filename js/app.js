@@ -21,7 +21,20 @@ function setBar(id, pct, on = true) {
   if (pct == null) b.removeAttribute('value');
   else b.value = Math.max(0, Math.min(100, pct));
   b.hidden = !on;
+  // The upload bar is mirrored into the floating widget so progress stays
+  // visible after the user navigates away from the upload section.
+  if (id === 'up-bar') {
+    const f = $('up-float-bar');
+    if (f) {
+      if (pct == null) f.removeAttribute('value');
+      else f.value = Math.max(0, Math.min(100, pct));
+    }
+  }
 }
+
+// True while an upload is in flight; keeps the floating progress pinned even if
+// the user clicks away to inbox/about (nav only toggles <main>'s sections).
+let uploading = false;
 
 initI18n();
 
@@ -41,9 +54,14 @@ $('upload-form').addEventListener('submit', async (e) => {
   if (servers.length === 0) return;
 
   $('go').disabled = true;
+  uploading = true;
   show('up-result', false);
   show('up-progress', true);
-  const prog = $('up-progress');
+  show('up-float', true);
+  // Write status text to both the in-section line and the floating widget.
+  const progEl = $('up-progress');
+  const floatText = $('up-float-text');
+  const prog = { set textContent(v) { progEl.textContent = v; floatText.textContent = v; } };
 
   try {
     // Part size: a blank field auto-detects each server's blob cap (BUD-06 HEAD)
@@ -142,6 +160,7 @@ $('upload-form').addEventListener('submit', async (e) => {
     setBar('up-bar', null, false);
   } finally {
     $('go').disabled = false;
+    uploading = false;
   }
 });
 
@@ -376,6 +395,7 @@ function clearSensitive() {
   setBar('up-bar', null, false);
   setBar('dl-bar', null, false);
   $('up-progress').textContent = '';
+  show('up-float', false);
 }
 
 // ---- Nav ----
@@ -388,6 +408,14 @@ $('nav-clear').addEventListener('click', (e) => {
   showOnly('upload');
   $('up-progress').textContent = t('status.cleared');
   show('up-progress', true);
+});
+
+// Clicking the floating progress jumps back to the upload section (revealing
+// the in-progress bar or the finished link). Once the upload has finished, the
+// click also dismisses the widget; while still running it stays pinned.
+$('up-float').addEventListener('click', () => {
+  showOnly('upload');
+  if (!uploading) show('up-float', false);
 });
 
 // Scrub on tab close / navigation away (also covers bfcache freeze).

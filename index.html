@@ -150,6 +150,14 @@
 
   <footer data-i18n="footer.text"></footer>
 
+  <!-- Floating upload progress: lives outside <main>'s sections so switching
+       nav (inbox/about) never hides it. Click to jump back to the upload. -->
+  <div id="up-float" class="up-float" hidden role="status" aria-live="polite"
+       tabindex="0" data-i18n-title="upload.floatReturn">
+    <progress id="up-float-bar" class="bar" max="100"></progress>
+    <span id="up-float-text"></span>
+  </div>
+
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
