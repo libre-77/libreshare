@@ -218,9 +218,18 @@ function renderDownloadMeta() {
   $('d-hash').textContent = d.v === 3 ? t('download.parts', { n: d.parts.length }) : d.hash;
 }
 
+// Save-as name when the link omits the filename ("put filename in link" off).
+// Derive a stable, per-file-unique name from the content hash (hex) so multiple
+// such downloads don't all collide on a bare "file".
+function fallbackName(d) {
+  const h = d.v === 3 ? (d.parts[0]?.hash || '') : (d.hash || '');
+  return h ? `libreshare-${h.slice(0, 12)}` : 'libreshare-file';
+}
+
 $('download-btn').addEventListener('click', async () => {
   if (!current) return;
   const { d, meta } = current;
+  const saveName = meta.name || fallbackName(d);
   $('download-btn').disabled = true;
   show('dl-error', false);
   show('dl-progress', true);
@@ -233,7 +242,7 @@ $('download-btn').addEventListener('click', async () => {
     // Prefer streaming straight to disk; fall back to an in-memory Blob.
     let sink, finish;
     if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({ suggestedName: meta.name || 'file' });
+      const handle = await window.showSaveFilePicker({ suggestedName: saveName });
       const writable = await handle.createWritable();
       sink = (chunk) => writable.write(chunk);
       finish = () => writable.close();
@@ -243,7 +252,7 @@ $('download-btn').addEventListener('click', async () => {
       finish = () => {
         const url = URL.createObjectURL(new Blob(parts, { type: meta.mime || 'application/octet-stream' }));
         const a = document.createElement('a');
-        a.href = url; a.download = meta.name || 'file';
+        a.href = url; a.download = saveName;
         a.click();
         URL.revokeObjectURL(url);
       };
