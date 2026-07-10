@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# miraclefile dev helper. Zero external deps for dev/test; `build` needs npm.
+# libreshare dev helper. Zero external deps for dev/test; `build` needs npm.
 #
 #   ./run.sh dev     start blossom-mock (:3000) + static web (:8080), Ctrl-C stops both
 #   ./run.sh test    crypto + gift-wrap unit tests, then upload/download e2e
