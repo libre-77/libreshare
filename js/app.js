@@ -10,7 +10,12 @@ import { initI18n, setLang, getLang, t, humanSize } from './i18n.js';
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => { $(id).hidden = !on; };
 const SECTIONS = ['upload', 'download', 'about', 'inbox'];
-const showOnly = (id) => SECTIONS.forEach((s) => show(s, s === id));
+let activeSection = 'upload';
+const showOnly = (id) => {
+  activeSection = id;
+  SECTIONS.forEach((s) => show(s, s === id));
+  syncFloat();
+};
 const csv = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
 
 // Drive a <progress> bar. pct null -> indeterminate (drop the value attribute);
@@ -32,9 +37,16 @@ function setBar(id, pct, on = true) {
   }
 }
 
-// True while an upload is in flight; keeps the floating progress pinned even if
-// the user clicks away to inbox/about (nav only toggles <main>'s sections).
-let uploading = false;
+// Upload lifecycle state. The floating widget is a bottom-left shortcut back to
+// the upload section; it appears only when there's something to return to (an
+// upload in flight, or a finished link) AND the user is looking elsewhere. On
+// the upload section itself the in-section bar/result already shows everything.
+let uploading = false;   // an upload is in flight
+let hasResult = false;   // a finished link is waiting in the upload section
+
+function syncFloat() {
+  show('up-float', (uploading || hasResult) && activeSection !== 'upload');
+}
 
 initI18n();
 
@@ -55,9 +67,9 @@ $('upload-form').addEventListener('submit', async (e) => {
 
   $('go').disabled = true;
   uploading = true;
+  hasResult = false;
   show('up-result', false);
   show('up-progress', true);
-  show('up-float', true);
   // Write status text to both the in-section line and the floating widget.
   const progEl = $('up-progress');
   const floatText = $('up-float-text');
@@ -149,6 +161,7 @@ $('upload-form').addEventListener('submit', async (e) => {
     }
     setBar('up-bar', 100, false);
     show('up-result', true);
+    hasResult = true;
 
     // The link now carries base64url copies of the key and meta; scrub the raw
     // byte buffers so the plaintext file and key don't linger on the heap. The
@@ -161,6 +174,7 @@ $('upload-form').addEventListener('submit', async (e) => {
   } finally {
     $('go').disabled = false;
     uploading = false;
+    syncFloat();
   }
 });
 
@@ -395,11 +409,16 @@ function clearSensitive() {
   setBar('up-bar', null, false);
   setBar('dl-bar', null, false);
   $('up-progress').textContent = '';
-  show('up-float', false);
+  hasResult = false;
+  syncFloat();
 }
 
 // ---- Nav ----
 
+// "new" returns to the upload section in-app (no page reload), so an in-flight
+// upload keeps running and a finished link stays visible. Was an <a href="/">,
+// which reloaded the page — killing the upload and tripping the unload guard.
+$('nav-new').addEventListener('click', (e) => { e.preventDefault(); showOnly('upload'); });
 $('nav-inbox').addEventListener('click', (e) => { e.preventDefault(); showOnly('inbox'); });
 $('nav-about').addEventListener('click', (e) => { e.preventDefault(); showOnly('about'); });
 $('nav-clear').addEventListener('click', (e) => {
@@ -411,12 +430,9 @@ $('nav-clear').addEventListener('click', (e) => {
 });
 
 // Clicking the floating progress jumps back to the upload section (revealing
-// the in-progress bar or the finished link). Once the upload has finished, the
-// click also dismisses the widget; while still running it stays pinned.
-$('up-float').addEventListener('click', () => {
-  showOnly('upload');
-  if (!uploading) show('up-float', false);
-});
+// the in-progress bar or the finished link). syncFloat() then hides it, since
+// the upload section shows the same state inline.
+$('up-float').addEventListener('click', () => showOnly('upload'));
 
 // Guard an accidental reload/close mid-upload: the browser shows its own
 // generic "leave site?" confirm (the text can't be customized). Only armed
