@@ -1,7 +1,7 @@
 // Run: node test/crypto.test.mjs
 import {
   encryptBytes, encryptPart, decryptBytes, decryptToSink, decryptPartToSink,
-  readMeta, randomBytes, paddedLength, wipe, newContentKey, encryptPartLegacyForTests,
+  readMeta, randomBytes, paddedLength, wipe, newContentKey,
 } from '../js/crypto.js';
 
 let pass = 0, fail = 0;
@@ -65,14 +65,12 @@ function eq(a, b) {
   await throws('bit flip rejected', () => decryptBytes(t, ck, realSize));
 }
 
-// 5. truncation attack: drop the final chunk. libsodium's secretstream embeds
-//    the tag (message/final) inside the authenticated ciphertext, so the new
-//    last chunk verifies as tag=MESSAGE where a tag=FINAL was expected -> the
-//    explicit tag check in decryptPartToSinkSodium rejects it.
+// 5. truncation attack: drop the final chunk. The new last chunk was sealed
+//    with final=0 but the decryptor verifies it as final=1 -> auth fail.
 {
   const plain = randomBytes(700 * 1024); // 3 chunks
   const { blob, ck, realSize } = await encryptBytes(plain, 'a', '');
-  const encChunk = 256 * 1024 + 17; // secretstream ABYTES = 17 (1 tag + 16 MAC)
+  const encChunk = 256 * 1024 + 16;
   const truncated = blob.subarray(0, blob.length - encChunk);
   await throws('truncation rejected', () =>
     decryptToSink(truncated, ck, realSize, () => {}));
@@ -164,29 +162,6 @@ function eq(a, b) {
   const p1 = await encryptPart(randomBytes(50 * 1024), ck, 1);
   await throws('part decrypted under wrong index rejected', () =>
     decryptPartToSink(p1.blob, ck, 2, p1.realSize, () => {}));
-}
-
-// 13. backward compat: a header-v1 (legacy AES-GCM) blob, as produced by the
-//     pre-libsodium encrypt path, still decrypts through the same public
-//     decryptPartToSink/decryptToSink used for current blobs.
-{
-  const ck = newContentKey();
-  const plain = randomBytes(400 * 1024);
-  const { blob, realSize } = await encryptPartLegacyForTests(plain, ck, 0);
-  const out = await decryptBytes(blob, ck, realSize);
-  ok('legacy v1 blob still decrypts', eq(out, plain));
-}
-
-// 14. legacy multipart: distinct part indices still derive distinct subkeys
-//     under the old HKDF path too.
-{
-  const ck = newContentKey();
-  const same = randomBytes(50 * 1024);
-  const a = await encryptPartLegacyForTests(same, ck, 0);
-  const b = await encryptPartLegacyForTests(same, ck, 1);
-  ok('legacy same plaintext, different part -> different blob', !eq(a.blob, b.blob));
-  await throws('legacy part decrypted under wrong index rejected', () =>
-    decryptPartToSink(b.blob, ck, 0, b.realSize, () => {}));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

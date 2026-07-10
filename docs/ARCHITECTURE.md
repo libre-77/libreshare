@@ -5,11 +5,7 @@
 
 작성: 2026-07-10
 상태: 설계 초안. §5(업로드)·§6(gift wrap 공유·수신)·§7(복호)은 구현됨(`js/`), 암호 리뷰 미수행.
-      파일 암호화는 §10/§11 설계대로 libsodium XChaCha20-Poly1305 secretstream +
-      crypto_kdf로 구현됨(이전엔 WebCrypto에 XChaCha20-Poly1305가 없어 AES-256-GCM
-      임시 대체 + 자체 STREAM 프레이밍을 썼음; 그 경로는 이미 공유된 링크 호환을 위해
-      읽기 전용으로 남아 있음). §4 키 볼트(Argon2id·duress)와 §2 Sia 백엔드·본인 운영
-      릴레이는 미구현.
+      §4 키 볼트(Argon2id·duress)와 §2 Sia 백엔드·본인 운영 릴레이는 미구현.
 위협 모델: 강압(coercion)·감시(surveillance)·관할권 압류를 상정한 하이-쓰렛 사용자
 
 ---

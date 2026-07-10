@@ -66,11 +66,11 @@ export const STRINGS = {
     'download.unnamed': '(unnamed)',
     'download.parts': '{n} parts',
 
-    'about.p1': 'miraclefile encrypts every file client-side with a per-file key (XChaCha20-Poly1305 via libsodium, STREAM framing). The key is put in the URL fragment, which browsers never transmit, so storage servers hold only opaque ciphertext.',
+    'about.p1': 'miraclefile encrypts every file client-side with a per-file key (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which browsers never transmit, so storage servers hold only opaque ciphertext.',
     'about.p2': 'Share the link privately over Nostr: it is sealed into a NIP-59 gift wrap addressed to one recipient, so the relay sees only an encrypted blob from a throwaway key — not the link, not who sent it. The recipient opens their <a href="#" id="about-inbox">inbox</a> and unwraps it locally.',
     'about.warn': 'Demo scope: this build ships link-mode sharing and Nostr gift-wrap delivery against public relays. Keys and plaintext buffers are wiped after use, and <b>clear</b> (or closing the tab) scrubs the link, nsec, and selected file from this tab — best-effort only, since strings and OS-paged memory can\'t be guaranteed erased. Still unbuilt (see <code>docs/ARCHITECTURE.md</code> §4): duress vaults and a self-run inbox relay. Transport is plain HTTPS — your IP is visible to the storage servers and relays. Use Tor or a VPN yourself if you need to hide it.',
 
-    'footer.text': '<a href="https://github.com/hzrd149/blossom">Blossom</a> · client-side XChaCha20-Poly1305 (libsodium) · no server-side keys',
+    'footer.text': '<a href="https://github.com/hzrd149/blossom">Blossom</a> · client-side AES-256-GCM · no server-side keys',
 
     'status.reading': 'reading…',
     'status.encrypting': 'encrypting…',
@@ -164,11 +164,11 @@ export const STRINGS = {
     'download.unnamed': '(이름 없음)',
     'download.parts': '파트 {n}개',
 
-    'about.p1': 'miraclefile은 모든 파일을 파일마다 다른 키(libsodium 기반 XChaCha20-Poly1305, STREAM 프레이밍)로 클라이언트에서 암호화합니다. 키는 브라우저가 절대 전송하지 않는 URL 프래그먼트에 담기므로, 저장 서버는 해독 불가능한 암호문만 갖게 됩니다.',
+    'about.p1': 'miraclefile은 모든 파일을 파일마다 다른 키(AES-256-GCM, STREAM 프레이밍)로 클라이언트에서 암호화합니다. 키는 브라우저가 절대 전송하지 않는 URL 프래그먼트에 담기므로, 저장 서버는 해독 불가능한 암호문만 갖게 됩니다.',
     'about.p2': 'Nostr로 링크를 비공개 전달하세요. 링크는 수신자 한 명에게 향하는 NIP-59 기프트랩으로 봉인되므로, 릴레이는 일회용 키가 보낸 암호화된 덩어리만 볼 뿐 링크도 발신자도 알 수 없습니다. 받는 사람은 <a href="#" id="about-inbox">수신함</a>을 열어 로컬에서 해제합니다.',
     'about.warn': '데모 범위: 이 빌드는 링크 공유와 공개 릴레이 기반 Nostr 기프트랩 전달을 제공합니다. 키와 평문 버퍼는 사용 후 소거하며, <b>지우기</b>(또는 탭 닫기)로 링크·nsec·선택한 파일을 이 탭에서 지웁니다 — 다만 문자열과 OS가 디스크로 스왑한 메모리는 지움을 보장할 수 없어 최선 노력에 그칩니다. 아직 미구현 (<code>docs/ARCHITECTURE.md</code> §4 참고): 강요 대비 금고(duress vault)와 자체 운영 수신함 릴레이. 전송 구간은 일반 HTTPS이므로 저장 서버와 릴레이에 내 IP가 노출됩니다. 숨기려면 Tor나 VPN을 직접 사용하세요.',
 
-    'footer.text': '<a href="https://github.com/hzrd149/blossom">Blossom</a> · 클라이언트 측 XChaCha20-Poly1305 (libsodium) · 서버에 키 없음',
+    'footer.text': '<a href="https://github.com/hzrd149/blossom">Blossom</a> · 클라이언트 측 AES-256-GCM · 서버에 키 없음',
 
     'status.reading': '읽는 중…',
     'status.encrypting': '암호화 중…',
