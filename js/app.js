@@ -155,7 +155,11 @@ $('upload-form').addEventListener('submit', async (e) => {
     }
 
     setBar('up-bar', 100);
-    $('link').value = buildLink(location.origin, descriptor);
+    // Base is the app's own directory URL (origin minus the current filename),
+    // so share links work whether the app is served at the domain root or under
+    // a subpath like GitHub Pages' /libreshare/. buildLink appends "/#<frag>".
+    const base = location.origin + location.pathname.replace(/\/[^/]*$/, '');
+    $('link').value = buildLink(base, descriptor);
     if (bytes.length <= maxPartBytes) {
       prog.textContent = t('status.stored', { count: storedCount, size: humanSize(bytes.length) });
     }
