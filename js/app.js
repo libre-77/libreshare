@@ -418,6 +418,15 @@ $('up-float').addEventListener('click', () => {
   if (!uploading) show('up-float', false);
 });
 
+// Guard an accidental reload/close mid-upload: the browser shows its own
+// generic "leave site?" confirm (the text can't be customized). Only armed
+// while an upload is in flight, so normal navigation is never nagged.
+window.addEventListener('beforeunload', (e) => {
+  if (!uploading) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 // Scrub on tab close / navigation away (also covers bfcache freeze).
 window.addEventListener('pagehide', clearSensitive);
 
