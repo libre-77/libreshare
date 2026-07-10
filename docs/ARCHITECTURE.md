@@ -1,4 +1,4 @@
-# miraclefile — 아키텍처 설계
+# libreshare — 아키텍처 설계
 
 탈중앙 · 프라이버시 우선 파일 업로드/공유 서비스.
 릴레이도 저장 노드도 파일 내용을 볼 수 없는 구조.
@@ -46,7 +46,7 @@ S3에서 가져온 세 가지:
 Nostr은 컨트롤 플레인(신원·발견·공유)이고, Blossom 서버가 스토리지 노드다.
 S3의 3계층이 그대로 매핑된다.
 
-| S3 계층 | miraclefile |
+| S3 계층 | libreshare |
 |---------|-------------|
 | 프론트엔드 | 클라이언트 (암복호, 유일한 평문 지점) |
 | 인덱스 / 메타데이터 | Nostr 릴레이 |
@@ -168,8 +168,8 @@ nsec (신원)          — 서명 전용. 암호화에 직접 쓰지 않는다.
   └─ NIP-44 대화키 = HKDF(ECDH(내priv, 상대pub))   ← 디스크립터 봉인용
 
 CK (파일별 콘텐츠 키) — 32바이트 CSPRNG. 신원과 무관. 파일마다 새로 생성.
-  ├─ encKey  = HKDF(CK, info="miraclefile/v1/content")
-  └─ metaKey = HKDF(CK, info="miraclefile/v1/meta")     ← 파일명·MIME 암호화
+  ├─ encKey  = HKDF(CK, info="libreshare/v1/content")
+  └─ metaKey = HKDF(CK, info="libreshare/v1/meta")     ← 파일명·MIME 암호화
 ```
 
 CK를 AEAD에 직접 넣지 않고 HKDF로 용도 분리한다.

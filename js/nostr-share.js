@@ -21,7 +21,7 @@ import { generateSecretKey, getPublicKey, nip19, nip59 } from '../vendor/nostr-t
 
 const KIND_FILE_RUMOR = 1063; // NIP-94-style file metadata; carries the link
 const KIND_GIFT_WRAP = 1059;
-const APP_TAG = 'miraclefile';
+const APP_TAG = 'ls';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 
@@ -88,7 +88,7 @@ export function wrapLink(link, recipient, senderSecret) {
 }
 
 // Open a gift wrap addressed to me (nsec/hex). Returns { link, senderPubkey }.
-// Throws if the wrap is not for me or does not carry a miraclefile link.
+// Throws if the wrap is not for me or does not carry a libreshare link.
 export function unwrapToLink(wrap, mySecret) {
   const mySk = parseSecretKey(mySecret);
   const rumor = nip59.unwrapEvent(wrap, mySk); // decrypts wrap→seal→rumor
@@ -125,7 +125,7 @@ export async function publishWrap(relays, wrap) {
 }
 
 // Fetch every gift wrap addressed to me across `relays`, unwrap the ones that
-// carry a miraclefile link, and return them newest-first, deduped by link.
+// carry a libreshare link, and return them newest-first, deduped by link.
 // Wraps that fail to decrypt (not for me, or corrupt) are skipped silently.
 export async function fetchWraps(relays, mySecret) {
   const mySk = parseSecretKey(mySecret);

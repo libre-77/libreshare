@@ -30,7 +30,7 @@ export async function ephemeralUploadAuth(server, hash) {
       {
         kind: KIND_BLOSSOM_AUTH,
         created_at: now,
-        content: 'Upload from miraclefile',
+        content: 'Upload from libreshare',
         tags: [
           ['t', 'upload'],
           ['x', hash],

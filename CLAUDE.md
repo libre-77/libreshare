@@ -1,4 +1,4 @@
-# miraclefile
+# libreshare
 
 Decentralized, privacy-first file upload/share. Files are encrypted in the
 browser; storage servers and Nostr relays only ever see ciphertext.
@@ -74,7 +74,7 @@ i18n — never hardcode a display string in `index.html` or `js/app.js`.**
 Resolved once at startup by `detectLang()`, in precedence order:
 
 1. `?lang=` query parameter
-2. `localStorage['mf.lang']` (written whenever the user picks a language)
+2. `localStorage['ls.lang']` (written whenever the user picks a language)
 3. `navigator.languages`, first entry whose base tag is supported (`ko-KR` → `ko`)
 4. `'en'`
 

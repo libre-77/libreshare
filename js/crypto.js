@@ -85,7 +85,7 @@ async function hkdf(ikm, info, length = 32) {
 // single-part file is byte-identical to the pre-multipart format (and old links
 // still decrypt); parts 1.. derive a fresh key from the same CK.
 async function contentKey(ck, part = 0) {
-  const info = part === 0 ? 'miraclefile/v1/content' : `miraclefile/v1/content/${part}`;
+  const info = part === 0 ? 'libreshare/v1/content' : `libreshare/v1/content/${part}`;
   const raw = await hkdf(ck, info);
   return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
@@ -95,7 +95,7 @@ export function newContentKey() {
 }
 
 async function metaKeyOf(ck) {
-  const raw = await hkdf(ck, 'miraclefile/v1/meta');
+  const raw = await hkdf(ck, 'libreshare/v1/meta');
   return subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 

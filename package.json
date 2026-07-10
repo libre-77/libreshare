@@ -1,5 +1,5 @@
 {
-  "name": "miraclefile",
+  "name": "libreshare",
   "version": "0.1.0",
   "description": "Decentralized, privacy-first file upload/share. Client-side encryption; servers see ciphertext only.",
   "type": "module",

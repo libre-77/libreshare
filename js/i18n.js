@@ -7,11 +7,11 @@
 
 export const SUPPORTED = ['en', 'ko'];
 export const DEFAULT_LANG = 'en';
-const STORAGE_KEY = 'mf.lang';
+const STORAGE_KEY = 'ls.lang';
 
 export const STRINGS = {
   en: {
-    'app.title': 'miraclefile',
+    'app.title': 'libreshare',
     'header.tag': 'end-to-end encrypted file sharing',
     'nav.new': 'new',
     'nav.inbox': 'inbox',
@@ -23,7 +23,7 @@ export const STRINGS = {
     'upload.servers': 'servers',
     'upload.serversHint': 'comma-separated Blossom servers. Uploads are signed with a throwaway key, so a server cannot link your files to each other. Local dev is <code>http://localhost:3000</code>.',
     'upload.embedServers': 'put server list in the link',
-    'upload.embedServersHint': 'off (default): shorter link, but it only opens on apps using the same default servers. on: longer, self-contained link that opens anywhere.',
+    'upload.embedServersHint': 'off (default): shorter link, but it only opens on apps using the same default servers. on: longer, self-contained link that opens anywhere. If you are not sure what this means, leave it off.',
     'upload.embedMeta': 'put filename &amp; type in the link',
     'upload.embedMetaHint': 'on (default): the recipient sees the original filename. off: shorter link, the recipient just gets a generic name. Either way no server ever sees it.',
     'upload.maxPart': 'max part (MB)',
@@ -66,7 +66,7 @@ export const STRINGS = {
     'download.unnamed': '(unnamed)',
     'download.parts': '{n} parts',
 
-    'about.p1': 'miraclefile encrypts every file client-side with a per-file key (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which browsers never transmit, so storage servers hold only opaque ciphertext.',
+    'about.p1': 'libreshare encrypts every file client-side with a per-file key (AES-256-GCM, STREAM framing). The key is put in the URL fragment, which browsers never transmit, so storage servers hold only opaque ciphertext.',
     'about.p2': 'Share the link privately over Nostr: it is sealed into a NIP-59 gift wrap addressed to one recipient, so the relay sees only an encrypted blob from a throwaway key — not the link, not who sent it. The recipient opens their <a href="#" id="about-inbox">inbox</a> and unwraps it locally.',
     'about.warn': 'Demo scope: this build ships link-mode sharing and Nostr gift-wrap delivery against public relays. Keys and plaintext buffers are wiped after use, and <b>clear</b> (or closing the tab) scrubs the link, nsec, and selected file from this tab — best-effort only, since strings and OS-paged memory can\'t be guaranteed erased. Still unbuilt (see <code>docs/ARCHITECTURE.md</code> §4): duress vaults and a self-run inbox relay. Transport is plain HTTPS — your IP is visible to the storage servers and relays. Use Tor or a VPN yourself if you need to hide it.',
 
@@ -109,7 +109,7 @@ export const STRINGS = {
   },
 
   ko: {
-    'app.title': 'miraclefile',
+    'app.title': 'libreshare',
     'header.tag': '종단간 암호화 파일 공유',
     'nav.new': '새 파일',
     'nav.inbox': '수신함',
@@ -121,7 +121,7 @@ export const STRINGS = {
     'upload.servers': '서버',
     'upload.serversHint': '쉼표로 구분한 Blossom 서버 주소. 업로드는 일회용 키로 서명하므로 서버가 당신의 파일들을 서로 연결할 수 없습니다. 로컬 개발용은 <code>http://localhost:3000</code>.',
     'upload.embedServers': '링크에 서버 목록 포함',
-    'upload.embedServersHint': '끄면(기본): 링크가 짧아지지만 같은 기본 서버를 쓰는 앱에서만 열립니다. 켜면: 길지만 어디서나 열리는 자체완결 링크.',
+    'upload.embedServersHint': '끄면(기본): 링크가 짧아지지만 같은 기본 서버를 쓰는 앱에서만 열립니다. 켜면: 길지만 어디서나 열리는 자체완결 링크. 무슨 뜻인지 잘 모르겠으면 꺼두세요.',
     'upload.embedMeta': '링크에 파일명·형식 포함',
     'upload.embedMetaHint': '켜면(기본): 받는 사람이 원본 파일명을 봅니다. 끄면: 링크가 짧아지고 받는 사람은 일반 이름만 받습니다. 어느 쪽이든 서버는 못 봅니다.',
     'upload.maxPart': '파트 최대 (MB)',
@@ -164,7 +164,7 @@ export const STRINGS = {
     'download.unnamed': '(이름 없음)',
     'download.parts': '파트 {n}개',
 
-    'about.p1': 'miraclefile은 모든 파일을 파일마다 다른 키(AES-256-GCM, STREAM 프레이밍)로 클라이언트에서 암호화합니다. 키는 브라우저가 절대 전송하지 않는 URL 프래그먼트에 담기므로, 저장 서버는 해독 불가능한 암호문만 갖게 됩니다.',
+    'about.p1': 'libreshare는 모든 파일을 파일마다 다른 키(AES-256-GCM, STREAM 프레이밍)로 클라이언트에서 암호화합니다. 키는 브라우저가 절대 전송하지 않는 URL 프래그먼트에 담기므로, 저장 서버는 해독 불가능한 암호문만 갖게 됩니다.',
     'about.p2': 'Nostr로 링크를 비공개 전달하세요. 링크는 수신자 한 명에게 향하는 NIP-59 기프트랩으로 봉인되므로, 릴레이는 일회용 키가 보낸 암호화된 덩어리만 볼 뿐 링크도 발신자도 알 수 없습니다. 받는 사람은 <a href="#" id="about-inbox">수신함</a>을 열어 로컬에서 해제합니다.',
     'about.warn': '데모 범위: 이 빌드는 링크 공유와 공개 릴레이 기반 Nostr 기프트랩 전달을 제공합니다. 키와 평문 버퍼는 사용 후 소거하며, <b>지우기</b>(또는 탭 닫기)로 링크·nsec·선택한 파일을 이 탭에서 지웁니다 — 다만 문자열과 OS가 디스크로 스왑한 메모리는 지움을 보장할 수 없어 최선 노력에 그칩니다. 아직 미구현 (<code>docs/ARCHITECTURE.md</code> §4 참고): 강요 대비 금고(duress vault)와 자체 운영 수신함 릴레이. 전송 구간은 일반 HTTPS이므로 저장 서버와 릴레이에 내 IP가 노출됩니다. 숨기려면 Tor나 VPN을 직접 사용하세요.',
 

@@ -1,4 +1,4 @@
-# miraclefile
+# libreshare
 
 End-to-end encrypted file upload/share. Files are encrypted in the browser; the
 storage server holds ciphertext only and never sees a key. Vanilla JS, no build

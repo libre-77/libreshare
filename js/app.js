@@ -434,5 +434,21 @@ function refreshDynamic() {
 
 markActiveLang();
 
+// ---- Persisted toggles ----
+// Remember the two link-shape checkboxes across sessions. Keys are namespaced
+// like i18n's `ls.lang`. Wrapped in try/catch — localStorage throws in some
+// private-browsing modes. A missing key leaves the HTML default untouched, so
+// a first visit still gets embed-servers off / embed-meta on.
+const TOGGLES = { 'embed-servers': 'ls.embedServers', 'embed-meta': 'ls.embedMeta' };
+
+for (const [id, key] of Object.entries(TOGGLES)) {
+  let v = null;
+  try { v = localStorage.getItem(key); } catch { /* private mode */ }
+  if (v !== null) $(id).checked = v === '1';
+  $(id).addEventListener('change', () => {
+    try { localStorage.setItem(key, $(id).checked ? '1' : '0'); } catch { /* private mode */ }
+  });
+}
+
 window.addEventListener('hashchange', route);
 route();
